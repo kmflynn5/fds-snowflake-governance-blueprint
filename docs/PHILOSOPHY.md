@@ -1,3 +1,8 @@
+<!--
+Copyright 2026 Flynn Data Services. Licensed under the Apache License, Version 2.0.
+See LICENSE at the root of this repository.
+-->
+
 # The Snowflake Governance Philosophy
 *Flynn Data Services — Internal Standard v1.1*
 

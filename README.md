@@ -138,7 +138,7 @@ scripts/
   intake-review.md         ← /intake-review skill
 
 terraform/
-  versions.tf              ← provider pinning (snowflake-labs/snowflake ~> 0.98)
+  versions.tf              ← provider pinning (snowflakedb/snowflake ~> 0.98)
   provider.tf              ← env-var-based auth (no secrets in code)
   main.tf                  ← root module wiring
   variables.tf             ← all variables (populated by generated tfvars)
@@ -211,6 +211,42 @@ terraform init -backend=false
 terraform validate
 terraform fmt -check
 ```
+
+---
+
+## Forking for a Live Engagement
+
+This repo is designed to be forked per client engagement. Before you do:
+
+**`terraform/generated/*.auto.tfvars.json` are committed by design** — they're the
+reviewable artifact of the codegen step. In this template repo they contain only
+example data. In a fork for a real client, they'll contain actual database names,
+role names, and warehouse names.
+
+Choose one of:
+
+1. **Keep the fork private.** Simplest. GitHub private repos are free. Recommended
+   for most engagements.
+
+2. **Gitignore generated output in the fork.** If you want a public fork (e.g. as a
+   sanitized case study), add this to the fork's `.gitignore`:
+   ```
+   terraform/generated/
+   ```
+   Then regenerate from a sanitized `connectors.yaml` before publishing.
+
+The same applies to `intake/decisions.md` — it will contain client-specific context
+after a real engagement. Treat it as confidential by default.
+
+---
+
+## License
+
+Apache 2.0. See [LICENSE](LICENSE).
+
+Copyright © 2026 Flynn Data Services. The governance philosophy, intake framework,
+and connector role pattern described in this repository are original works. Attribution
+is required for derived works per the Apache 2.0 terms.
 
 ---
 
