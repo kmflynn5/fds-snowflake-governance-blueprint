@@ -1,0 +1,35 @@
+# intake/tags.yaml
+# Generated during intake. Defines the tag taxonomy for this environment.
+# Consumed by terraform/modules/tags/ (Walk stage).
+#
+# See: docs/SPEC.md §1.3, docs/PHILOSOPHY.md §The Maturity Model — Walk
+
+required_tags:                       # All objects must have these at Walk stage
+  - name: cost_center
+    values: ["engineering", "analytics", "product", "infrastructure"]
+    apply_to: [database, schema, warehouse]
+
+  - name: environment
+    values: ["prod", "staging", "dev"]
+    apply_to: [database, schema, warehouse]
+
+  - name: owner
+    values: []                       # freeform — team or person name
+    apply_to: [database, schema]
+
+optional_tags:                       # Recommended but not enforced at Walk stage
+  - name: project
+    apply_to: [schema, table]
+
+  - name: sensitivity
+    values: ["public", "internal", "confidential", "restricted"]
+    apply_to: [database, schema, table]
+
+  - name: pii
+    values: ["true", "false"]
+    apply_to: [table, column]
+
+enforcement_stage: crawl             # crawl | walk | run
+# crawl: tags defined but not enforced
+# walk: required_tags enforced on new objects via tag policy
+# run: tag policy blocks object creation if required tags are missing

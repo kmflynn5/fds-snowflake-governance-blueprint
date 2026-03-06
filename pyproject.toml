@@ -1,0 +1,32 @@
+[project]
+name = "fds-snowflake-maturation-blueprint"
+version = "0.1.0"
+description = "Config-driven Snowflake governance framework — intake, codegen, and Terraform"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    "click>=8.1",
+    "snowflake-connector-python>=3.6",
+    "cryptography>=42.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+]
+
+[project.scripts]
+intake-interview = "scripts.intake_interview:cli"
+generate-tf = "scripts.generate_tf:main"
+audit = "scripts.audit:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

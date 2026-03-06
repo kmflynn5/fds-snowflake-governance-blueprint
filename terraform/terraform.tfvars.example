@@ -1,0 +1,17 @@
+# terraform/terraform.tfvars.example
+# Copy to terraform.tfvars and fill in values. Never commit terraform.tfvars.
+#
+# Credentials should be provided via environment variables (see provider.tf).
+# Only non-secret configuration belongs here.
+
+# Snowflake connection (override provider defaults if needed)
+# snowflake_account          = "xy12345.us-east-1"
+# snowflake_user             = "TF_SYSADMIN"
+# snowflake_private_key_path = "~/.snowflake/tf_rsa_key.p8"
+
+# Environment tag value applied to all resources
+environment = "prod"
+
+# Notify these users when resource monitor thresholds are hit
+# Must be valid Snowflake usernames (ACCOUNTADMIN holders recommended)
+resource_monitor_notify_users = ["ADMIN"]

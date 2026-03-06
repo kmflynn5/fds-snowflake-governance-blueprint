@@ -1,0 +1,56 @@
+# intake/connectors.yaml
+# Generated during intake. Each entry produces:
+#   - A CONN_{name} account role
+#   - An OBJ_{target_db}_{scope}_{privilege_tier} object role
+#   - The appropriate privilege grants
+#   - Assignment to WH_{warehouse}
+#
+# See: docs/SPEC.md §1.2, docs/PHILOSOPHY.md §The Connector Role Philosophy
+
+connectors:
+  - name: FIVETRAN                   # becomes CONN_FIVETRAN
+    type: etl                        # etl | orchestrator | event_stream | transformer | bi_tool | custom
+    target_db: RAW_FIVETRAN          # isolated database per PHILOSOPHY.md
+    target_schemas: ["*"]            # all schemas in this db, or list specific
+    privileges: [INSERT, CREATE TABLE]
+    warehouse: INGEST                # becomes WH_INGEST
+    reason: "Fivetran managed ETL — writes source replicas to isolated RAW db"
+    vendor_managed: true             # Fivetran manages the credential
+
+  - name: AIRFLOW
+    type: orchestrator
+    target_db: RAW_AIRFLOW
+    target_schemas: ["*"]
+    privileges: [INSERT, CREATE TABLE, SELECT]  # needs read-back for incremental
+    warehouse: INGEST
+    reason: "Airflow custom ingestion pipelines — needs SELECT for incremental logic"
+    vendor_managed: false
+
+  - name: SNOWPIPE_SNOWPLOW
+    type: event_stream
+    target_db: EVENTS
+    target_schemas: ["SNOWPLOW"]
+    privileges: [INSERT]
+    extra_grants: [CREATE PIPE, MONITOR]  # Snowpipe-specific — see PHILOSOPHY.md §9
+    warehouse: INGEST
+    reason: "Snowpipe continuous load from S3 — scoped to EVENTS.SNOWPLOW only"
+    vendor_managed: false
+
+  - name: DBT_PROD
+    type: transformer
+    source_dbs: ["RAW_FIVETRAN", "RAW_AIRFLOW", "EVENTS"]  # read access to these
+    target_db: ANALYTICS
+    target_schemas: ["*"]
+    privileges: [SELECT, INSERT, CREATE TABLE, CREATE SCHEMA]
+    warehouse: TRANSFORM
+    reason: "dbt production runs — reads all RAW, writes to ANALYTICS"
+    vendor_managed: false
+
+  - name: LOOKER
+    type: bi_tool
+    source_db: MARTS                 # read-only access to final layer
+    target_schemas: ["*"]
+    privileges: [SELECT]
+    warehouse: ANALYTICS
+    reason: "Looker BI tool — read-only access to final MARTS layer"
+    vendor_managed: true
