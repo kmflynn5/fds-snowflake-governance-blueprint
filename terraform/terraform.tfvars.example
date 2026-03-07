@@ -4,10 +4,12 @@
 # Credentials should be provided via environment variables (see provider.tf).
 # Only non-secret configuration belongs here.
 
-# Snowflake connection (override provider defaults if needed)
-# snowflake_account          = "xy12345.us-east-1"
-# snowflake_user             = "TF_SYSADMIN"
-# snowflake_private_key_path = "~/.snowflake/tf_rsa_key.p8"
+# Snowflake connection is configured via environment variables (see provider.tf).
+# Set these in your shell before running terraform:
+#   export SNOWFLAKE_ACCOUNT=xy12345.us-east-1
+#   export SNOWFLAKE_USER=TF_SYSADMIN
+#   export SNOWFLAKE_PRIVATE_KEY_PATH=~/.snowflake/tf_rsa_key.p8
+#   export SNOWFLAKE_ROLE=SYSADMIN
 
 # Environment tag value applied to all resources
 environment = "prod"

@@ -26,23 +26,3 @@ resource "snowflake_resource_monitor" "this" {
 
   notify_users = var.resource_monitor_notify_users
 }
-
-# Attach each resource monitor to its warehouse
-resource "snowflake_warehouse" "monitored" {
-  for_each = var.warehouses
-
-  name             = snowflake_warehouse.this[each.key].name
-  resource_monitor = snowflake_resource_monitor.this[each.key].name
-
-  # Preserve all settings from the base warehouse resource
-  warehouse_size = each.value.size
-  auto_suspend   = each.value.auto_suspend_seconds
-  auto_resume    = each.value.auto_resume
-  comment        = each.value.comment
-
-  depends_on = [snowflake_warehouse.this, snowflake_resource_monitor.this]
-
-  lifecycle {
-    ignore_changes = [warehouse_size, auto_suspend, auto_resume, comment]
-  }
-}

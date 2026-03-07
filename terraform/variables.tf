@@ -9,30 +9,6 @@
 #   connector_type_mapping
 
 # ---------------------------------------------------------------------------
-# Snowflake connection (sourced from env vars, not committed)
-# ---------------------------------------------------------------------------
-
-variable "snowflake_account" {
-  description = "Snowflake account identifier (e.g. xy12345.us-east-1)"
-  type        = string
-  sensitive   = true
-  default     = null # Prefer SNOWFLAKE_ACCOUNT env var
-}
-
-variable "snowflake_user" {
-  description = "Snowflake username for the Terraform service account"
-  type        = string
-  sensitive   = true
-  default     = null # Prefer SNOWFLAKE_USER env var
-}
-
-variable "snowflake_private_key_path" {
-  description = "Path to RSA private key for key-pair authentication"
-  type        = string
-  default     = null # Prefer SNOWFLAKE_PRIVATE_KEY_PATH env var
-}
-
-# ---------------------------------------------------------------------------
 # Shared configuration
 # ---------------------------------------------------------------------------
 

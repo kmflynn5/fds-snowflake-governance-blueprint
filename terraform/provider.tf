@@ -1,18 +1,10 @@
-# snowflake-labs/snowflake provider configuration
-# All credentials are sourced from environment variables — never hardcoded.
-#
-# Required environment variables:
-#   SNOWFLAKE_ACCOUNT    — account identifier (e.g. xy12345.us-east-1)
-#   SNOWFLAKE_USER       — username of the Terraform service account
-#   SNOWFLAKE_PRIVATE_KEY_PATH — path to RSA private key (key-pair auth)
+# snowflakedb/snowflake provider — all auth via environment variables.
+# The provider reads these automatically; no explicit HCL arguments needed:
+#   SNOWFLAKE_ACCOUNT           — account identifier (e.g. xy12345.us-east-1)
+#   SNOWFLAKE_USER              — Terraform service account username
+#   SNOWFLAKE_PRIVATE_KEY_PATH  — path to RSA private key file
+#   SNOWFLAKE_ROLE              — set to SYSADMIN for infrastructure operations
 #
 # See: docs/PHILOSOPHY.md §Core Principles #8 (key-pair auth)
-# See: terraform/terraform.tfvars.example for full variable reference
 
-provider "snowflake" {
-  account  = var.snowflake_account
-  username = var.snowflake_user
-  role     = "SYSADMIN"
-
-  private_key_path = var.snowflake_private_key_path
-}
+provider "snowflake" {}

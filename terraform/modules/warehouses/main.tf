@@ -16,9 +16,10 @@
 resource "snowflake_warehouse" "this" {
   for_each = var.warehouses
 
-  name           = "WH_${each.key}"
-  warehouse_size = each.value.size
-  auto_suspend   = each.value.auto_suspend_seconds
-  auto_resume    = each.value.auto_resume
-  comment        = each.value.comment
+  name             = "WH_${each.key}"
+  warehouse_size   = each.value.size
+  auto_suspend     = each.value.auto_suspend_seconds
+  auto_resume      = each.value.auto_resume
+  resource_monitor = snowflake_resource_monitor.this[each.key].name
+  comment          = each.value.comment
 }

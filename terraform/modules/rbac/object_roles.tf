@@ -79,6 +79,16 @@ locals {
     role_name => role
     if length(role.schemas) == 0 && length(role.privileges) > 0
   }
+
+  # Subset of future_grant_roles that have at least one table privilege (SELECT or INSERT).
+  # Excludes roles with no applicable privileges to prevent empty privileges argument.
+  future_table_grant_roles = {
+    for role_name, role in local.future_grant_roles :
+    role_name => merge(role, {
+      table_privileges = [for p in role.privileges : p if contains(["SELECT", "INSERT"], p)]
+    })
+    if length([for p in role.privileges : p if contains(["SELECT", "INSERT"], p)]) > 0
+  }
 }
 
 # Specific schema grants
@@ -95,10 +105,10 @@ resource "snowflake_grant_privileges_to_account_role" "object_schema_privileges"
 
 # Future grants — all tables/views in all schemas of the database
 resource "snowflake_grant_privileges_to_account_role" "object_future_table_grants" {
-  for_each = local.future_grant_roles
+  for_each = local.future_table_grant_roles
 
   account_role_name = snowflake_account_role.object[each.key].name
-  privileges        = [for p in each.value.privileges : p if contains(["SELECT", "INSERT"], p)]
+  privileges        = each.value.table_privileges
 
   on_schema_object {
     future {
