@@ -63,10 +63,19 @@ Snowflake resources
 
 ### Greenfield Engagement
 
+> **First time?** See `docs/GREENFIELD_TESTING_PLAN.md` for the full walkthrough —
+> account setup, auth, keypair generation, and step-by-step verification.
+
 ```bash
 # Install dependencies
 pip install uv
-uv sync
+uv sync --group dev
+
+# Set auth env vars (see docs/GREENFIELD_TESTING_PLAN.md §Step 2)
+export SNOWFLAKE_ACCOUNT="<account-identifier>"
+export SNOWFLAKE_USER="TF_SYSADMIN"
+export SNOWFLAKE_PRIVATE_KEY_PATH="$HOME/.snowflake/tf_rsa_key.pem"
+export SNOWFLAKE_ROLE="TF_SYSADMIN"
 
 # Option A: guided session in Claude Code
 # /intake-greenfield
@@ -78,11 +87,11 @@ uv run scripts/intake_interview.py --greenfield
 uv run scripts/generate_tf.py
 
 # Review output
-cat terraform/generated/rbac.auto.tfvars.json | python -m json.tool
+python -m json.tool terraform/generated/rbac.auto.tfvars.json
 
 # Apply
 cd terraform
-terraform init
+terraform init -backend=false
 terraform plan
 terraform apply
 ```
@@ -138,7 +147,7 @@ scripts/
   intake-review.md         ← /intake-review skill
 
 terraform/
-  versions.tf              ← provider pinning (snowflakedb/snowflake ~> 0.98)
+  versions.tf              ← provider pinning (snowflakedb/snowflake ~> 0.100)
   provider.tf              ← env-var-based auth (no secrets in code)
   main.tf                  ← root module wiring
   variables.tf             ← all variables (populated by generated tfvars)
@@ -156,10 +165,11 @@ tests/
     test_intake_interview.py ← intake CLI
 
 docs/
-  PHILOSOPHY.md            ← governance principles — read first
-  SPEC.md                  ← full build specification
-  greenfield_intake.md     ← greenfield questionnaire
-  brownfield_intake.md     ← brownfield survey + interview
+  PHILOSOPHY.md              ← governance principles — read first
+  SPEC.md                    ← full build specification
+  greenfield_intake.md       ← greenfield questionnaire
+  brownfield_intake.md       ← brownfield survey + interview
+  GREENFIELD_TESTING_PLAN.md ← end-to-end trial run guide (also GET_STARTED)
 ```
 
 ---
