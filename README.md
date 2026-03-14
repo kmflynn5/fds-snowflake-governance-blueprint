@@ -33,7 +33,32 @@ Snowflake resources
 
 ---
 
-## Maturity Model
+## RBAC Architecture
+
+```
+ACCOUNTADMIN                ← zero active users in production
+  └── SYSADMIN              ← infrastructure setup only
+      ├── FIREFIGHTER       ← dormant, zero assigned users, emergency only
+      ├── LOADER            ← conceptual (ingestion workloads)
+      │   └── CONN_FIVETRAN
+      │   └── CONN_AIRFLOW
+      │   └── CONN_SNOWPIPE_SNOWPLOW
+      ├── TRANSFORMER       ← conceptual (transformation workloads)
+      │   └── CONN_DBT_PROD
+      └── ANALYST           ← conceptual (BI + human analysts)
+          └── CONN_LOOKER
+
+Each CONN_{NAME}:
+  └── OBJ_{DB}_WRITER or OBJ_{DB}_READER   ← privilege holders
+  └── WH_{WORKLOAD} USAGE
+```
+
+Object roles hold privileges. Connector roles hold object roles.
+Human users get functional roles. Service accounts get connector roles. Never crossed.
+
+---
+
+## Core + Expansions
 
 ### Core — Structural Integrity
 
@@ -54,68 +79,15 @@ Snowflake resources
 
 ## Quick Start
 
-### Greenfield Engagement
+For the full step-by-step, see [docs/QUICK_START.md](docs/QUICK_START.md).
 
-> **First time?** See `docs/GREENFIELD_TESTING_PLAN.md` for the full walkthrough —
-> account setup, auth, keypair generation, and step-by-step verification.
+**Greenfield:** run the intake interview (`uv run scripts/intake_interview.py --greenfield`),
+generate Terraform variables (`uv run scripts/generate_tf.py`), then `terraform apply`.
+The `/intake-greenfield` Claude Code skill runs a guided version of the same interview.
 
-```bash
-# Install dependencies
-pip install uv
-uv sync --group dev
-
-# Set auth env vars (see docs/GREENFIELD_TESTING_PLAN.md §Step 2)
-export SNOWFLAKE_ACCOUNT="<account-identifier>"
-export SNOWFLAKE_USER="TF_SYSADMIN"
-export SNOWFLAKE_PRIVATE_KEY_PATH="$HOME/.snowflake/tf_rsa_key.pem"
-export SNOWFLAKE_ROLE="TF_SYSADMIN"
-
-# Option A: guided session in Claude Code
-# /intake-greenfield
-
-# Option B: CLI interview
-uv run scripts/intake_interview.py --greenfield
-
-# Generate Terraform variables
-uv run scripts/generate_tf.py
-
-# Review output
-python -m json.tool terraform/generated/rbac.auto.tfvars.json
-
-# Apply
-cd terraform
-terraform init -backend=false
-terraform plan
-terraform apply
-```
-
-### Brownfield Engagement
-
-```bash
-# Step 1: generate audit keypair
-uv run scripts/audit.py keygen
-# Share public key with client → client runs scripts/audit_setup.sql
-
-# Step 2: run audit
-export SNOWFLAKE_ACCOUNT="your-account"
-export SNOWFLAKE_USER="FDS_AUDITOR_USER"
-export SNOWFLAKE_PRIVATE_KEY_PATH="./audit_key.p8"
-export SNOWFLAKE_WAREHOUSE="COMPUTE_WH"
-
-uv run scripts/audit.py audit
-uv run scripts/audit.py report
-
-# Step 3: review findings + run intake
-# /intake-review   ← guided session in Claude Code
-# OR:
-uv run scripts/intake_interview.py --brownfield
-
-# Step 4: client runs scripts/audit_teardown.sql
-
-# Step 5: generate + apply Terraform (same as greenfield)
-uv run scripts/generate_tf.py
-cd terraform && terraform init && terraform plan && terraform apply
-```
+**Brownfield:** run the automated audit first (`uv run scripts/audit.py audit`), review the
+gap report, then run the intake interview (`uv run scripts/intake_interview.py --brownfield`).
+The `/intake-review` Claude Code skill walks through findings and drives the interview.
 
 ---
 
@@ -159,60 +131,10 @@ tests/
 
 docs/
   PHILOSOPHY.md              ← governance principles — read first
-  SPEC.md                    ← full build specification
+  QUICK_START.md             ← full setup steps (greenfield + brownfield)
   greenfield_intake.md       ← greenfield questionnaire
   brownfield_intake.md       ← brownfield survey + interview
-  GREENFIELD_TESTING_PLAN.md ← end-to-end trial run guide (also GET_STARTED)
-```
-
----
-
-## RBAC Architecture
-
-```
-ACCOUNTADMIN                ← zero active users in production
-  └── SYSADMIN              ← infrastructure setup only
-      ├── FIREFIGHTER       ← dormant, zero assigned users, emergency only
-      ├── LOADER            ← conceptual (ingestion workloads)
-      │   └── CONN_FIVETRAN
-      │   └── CONN_AIRFLOW
-      │   └── CONN_SNOWPIPE_SNOWPLOW
-      ├── TRANSFORMER       ← conceptual (transformation workloads)
-      │   └── CONN_DBT_PROD
-      └── ANALYST           ← conceptual (BI + human analysts)
-          └── CONN_LOOKER
-
-Each CONN_{NAME}:
-  └── OBJ_{DB}_WRITER or OBJ_{DB}_READER   ← privilege holders
-  └── WH_{WORKLOAD} USAGE
-```
-
-Object roles hold privileges. Connector roles hold object roles.
-Human users get functional roles. Service accounts get connector roles. Never crossed.
-
----
-
-## Running Tests
-
-```bash
-uv run pytest tests/unit/
-
-# Brownfield audit dry run (no Snowflake required)
-uv run scripts/audit.py audit --dry-run
-
-# Codegen dry run
-uv run scripts/generate_tf.py --dry-run
-```
-
----
-
-## Verifying Terraform
-
-```bash
-cd terraform
-terraform init -backend=false
-terraform validate
-terraform fmt -check
+  GREENFIELD_TESTING_PLAN.md ← end-to-end trial run guide
 ```
 
 ---
@@ -240,6 +162,17 @@ Choose one of:
 
 The same applies to `intake/decisions.md` — it will contain client-specific context
 after a real engagement. Treat it as confidential by default.
+
+### Staying current with upstream improvements
+
+This template repo is versioned with tags and a `CHANGELOG.md`. For new engagements,
+fork from the latest tag. For existing client forks, upstream improvements are pulled
+manually — edit the modules, re-run codegen, review the diff.
+
+The intentional friction here is a feature: because all client-specific configuration
+lives in `intake/connectors.yaml` and `intake/tags.yaml`, pulling an upstream module
+change is a contained operation with a reviewable output. It benefits from someone who
+understands the governance implications of the change — which is the point.
 
 ---
 
