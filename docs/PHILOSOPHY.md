@@ -136,10 +136,11 @@ All service accounts defined in `connectors.yaml` must use RSA key-pair
 authentication. The private key is stored in a secrets manager (not in the
 repo). The public key is managed via Terraform.
 
-Password-based auth for service accounts is an acceptable Crawl stage
+Password-based auth for service accounts is an acceptable Core stage
 compromise only when migrating an existing environment where rotation
 requires coordinating with a vendor. It must be documented in `decisions.md`
-with a target remediation date and must be resolved before Walk stage exit.
+with a target remediation date and must be resolved before adopting the
+Observability expansion.
 
 ### 9. Storage integrations are privileged objects
 
@@ -256,7 +257,7 @@ incrementally. This framework is structured around three maturity stages —
 not because lower stages are acceptable endpoints, but because incremental
 adoption is more likely to succeed than big-bang governance projects.
 
-### Crawl — Structural Integrity
+### Core — Structural Integrity
 
 **Goal:** The hierarchy is correct and the worst anti-patterns are
 eliminated.
@@ -276,11 +277,11 @@ manual.
 **Exit criteria:** The eval suite's privilege assertions pass. No direct
 grants exist. FIREFIGHTER has zero assigned users.
 
-### Walk — Observability
+### Observability Expansion
 
 **Goal:** You can see what is happening and know when something drifts.
 
-At this stage, everything from Crawl plus:
+Everything from Core plus:
 - Tagging enforced on all new objects (cost center, owner, environment)
 - Cost attribution working by team and project
 - Eval suite running on a schedule, findings reviewed weekly
@@ -294,11 +295,11 @@ still partly manual.
 **Exit criteria:** Eval suite runs clean. Cost is attributable. Drift is
 visible within 24 hours.
 
-### Run — Automated Enforcement
+### Enforcement Expansion
 
 **Goal:** Drift is impossible, not just visible.
 
-At this stage, everything from Walk plus:
+Everything from Observability plus:
 - Tag policies block untagged object creation at the database level
 - All RBAC changes require a passing `terraform plan` review before merge
 - FIREFIGHTER assignment triggers an automated incident

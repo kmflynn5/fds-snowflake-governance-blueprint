@@ -31,15 +31,15 @@ is handled cleanly, not just the common case.
 
 The testbed is organized into phases that mirror the framework's own maturity progression.
 
-**CRAWL** — Greenfield instance, three connector archetypes, manual execution.
+**CORE** — Greenfield instance, three connector archetypes, manual execution.
 Validates role topology, write pattern correctness, privilege isolation, and that
 `PHILOSOPHY.md` is legible to someone who did not author the framework.
 
-**WALK** — Planned. Will cover multi-environment promotion, dbt transformation layer,
-and CI/CD pipeline for `terraform apply`.
+**OBSERVABILITY** — Planned. Will cover multi-environment promotion, dbt transformation
+layer, and CI/CD pipeline for `terraform apply`.
 
-**RUN** — Planned. Will cover brownfield intake path, production data volumes, and
-schema drift detection.
+**ENFORCEMENT** — Planned. Will cover brownfield intake path, production data volumes,
+and schema drift detection.
 
 ---
 
@@ -62,7 +62,7 @@ implementation rather than the other way around.
 If you are evaluating this framework for your own environment, clone the testbed and
 follow its README. You will need:
 
-- A Snowflake trial account (30-day free tier is sufficient for CRAWL phase)
+- A Snowflake trial account (30-day free tier is sufficient for Core phase)
 - Terraform >= 1.5.0 with the Snowflake provider >= 0.90.0
 - Python 3.11+
 - `openssl` for key pair generation
@@ -84,10 +84,10 @@ github.com/kmflynn5/fds-snowflake-maturation-blueprint   (this repo)
 └── validated by ──►  github.com/kmflynn5/fds-blueprint-testbed
                        │
                        │   Connector simulations, verify_roles.sql,
-                       │   CRAWL/WALK/RUN test plans
+                       │   Core/Observability/Enforcement test plans
 ```
 
 Changes to the `connectors.yaml` schema or the role generation logic in this repo
-should be followed by a CRAWL phase validation run in the testbed before being
+should be followed by a Core phase validation run in the testbed before being
 considered stable. There is no automated enforcement of this — it is a convention,
 documented here so it is not forgotten.

@@ -9,7 +9,7 @@
 #   suspend_triggers: 100% of monthly credit quota
 #
 # References:
-#   PHILOSOPHY.md §Maturity Model — Crawl (resource monitors required at Crawl)
+#   PHILOSOPHY.md §Maturity Model — Core (resource monitors required at Core)
 #   SPEC.md §Part 3 — Resource Monitor Defaults
 
 resource "snowflake_resource_monitor" "this" {

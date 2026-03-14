@@ -5,9 +5,9 @@ See LICENSE at the root of this repository.
 
 # Greenfield Trial Run — Testing Plan
 
-*Flynn Data Services · Crawl Stage (Phase 1)*
+*Flynn Data Services · Core Stage (Phase 1)*
 
-This document walks through a full end-to-end deployment of the Crawl stage
+This document walks through a full end-to-end deployment of the Core stage
 against a Snowflake trial account. It doubles as a GET_STARTED guide for any
 new greenfield engagement — once you've verified it works here, the only
 difference on a client account is the intake answers and the auth credentials.
@@ -166,8 +166,8 @@ following the schema in `docs/SPEC.md §1.2`. Common changes:
 - Adjust warehouse sizes (`size: XSMALL` → `SMALL` / `MEDIUM`)
 - Set real credit quotas (`monthly_credit_quota: 100`)
 
-Also review `intake/tags.yaml` — tags are collected at Crawl but not enforced
-until Walk. No changes needed for the trial.
+Also review `intake/tags.yaml` — tags are collected at Core but not enforced
+until the Observability expansion. No changes needed for the trial.
 
 ---
 
@@ -364,22 +364,22 @@ DROP ROLE IF EXISTS TF_SYSADMIN;
 
 ---
 
-## Known Limitations (Crawl Stage)
+## Known Limitations (Core Stage)
 
-The following are intentionally deferred to Walk/Run stages and are **not**
+The following are intentionally deferred to expansion packs and are **not**
 part of this trial:
 
-| Item | Stage | Notes |
+| Item | Expansion | Notes |
 |---|---|---|
-| Tag enforcement policy | Walk | `tags.yaml` is committed; tagging module not yet built |
-| Eval suite (RBAC assertions) | Walk | `tests/eval/` not yet implemented |
-| CI/CD terraform plan gate | Walk | `.github/workflows/terraform-plan.yml` not yet built |
-| FIREFIGHTER activation alerting | Run | Manual check only at this stage |
-| Cost anomaly detection | Walk | Resource monitors alert on budget, not on anomalies |
+| Tag enforcement policy | Observability | `tags.yaml` is committed; tagging module not yet built |
+| Eval suite (RBAC assertions) | Observability | `tests/eval/` not yet implemented |
+| CI/CD terraform plan gate | Observability | `.github/workflows/terraform-plan.yml` not yet built |
+| FIREFIGHTER activation alerting | Enforcement | Manual check only at this stage |
+| Cost anomaly detection | Observability | Resource monitors alert on budget, not on anomalies |
 
-For a Crawl-stage engagement, the manual Snowsight checks in Step 9 are the
-verification layer. The eval suite (Walk) is what automates and schedules
-those checks.
+For a Core-stage engagement, the manual Snowsight checks in Step 9 are the
+verification layer. The eval suite (Observability expansion) is what automates
+and schedules those checks.
 
 ---
 

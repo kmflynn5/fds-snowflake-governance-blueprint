@@ -92,7 +92,7 @@ class TestCliOutputs:
             "5",              # analysts
             "0",              # data scientists
             "3",              # service accounts
-            "crawl",          # maturity
+            "core",           # maturity
             "n",              # no ingestion tools
             "n",              # no transformation tools
             "n",              # no consumption tools
@@ -126,7 +126,7 @@ class TestCliOutputs:
         inputs = "\n".join([
             "data_platform",
             "2", "5", "0", "3",
-            "crawl",
+            "core",
             "y",              # add ingestion tool
             "FIVETRAN",
             "etl",
@@ -175,13 +175,13 @@ class TestCliOutputs:
                 {"name": "cost_center", "values": ["engineering"], "apply_to": ["database"]},
             ],
             "optional_tags": [],
-            "enforcement_stage": "crawl",
+            "enforcement_stage": "core",
         }
         path = _write_tags_yaml(tags, tmp_path)
         assert path.exists()
         loaded = yaml.safe_load(path.read_text())
         assert "required_tags" in loaded
-        assert loaded["enforcement_stage"] == "crawl"
+        assert loaded["enforcement_stage"] == "core"
 
     def test_decisions_md_written(self, tmp_path):
         from scripts.intake_interview import _write_decisions_md
@@ -189,7 +189,7 @@ class TestCliOutputs:
         context = {
             "purpose": "data_platform",
             "team": {"data_engineers": 2, "analysts": 5, "data_scientists": 0, "service_accounts": 3},
-            "maturity_target": "crawl",
+            "maturity_target": "core",
         }
         emergency = {
             "authorized_contacts": [{"name": "Alice", "title": "Lead DE", "contact": "@alice"}],
@@ -212,7 +212,7 @@ class TestCliOutputs:
         assert "FIREFIGHTER" in content
         assert "Alice" in content
         assert "WH_INGEST" in content
-        assert "crawl" in content.lower()
+        assert "core" in content.lower()
 
 
 # ---------------------------------------------------------------------------

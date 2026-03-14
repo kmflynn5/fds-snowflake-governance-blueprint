@@ -80,10 +80,10 @@ def _section_context(brownfield_context: dict | None) -> dict:
 
     maturity = _prompt(
         "Maturity target",
-        type=click.Choice(["crawl", "walk", "run"], case_sensitive=False),
-        default="crawl",
+        type=click.Choice(["core", "observability", "enforcement"], case_sensitive=False),
+        default="core",
     )
-    _note("If unsure, start with crawl — structure first, enforcement second.")
+    _note("If unsure, start with core — structure first, enforcement second.")
 
     return {
         "purpose": purpose,
@@ -290,7 +290,7 @@ def _section_warehouses() -> dict:
 def _section_tags() -> dict:
     """Section 7: Tagging taxonomy."""
     _section_header("Section 7 — Tagging")
-    _note("Tags are defined now and enforced at Walk stage.")
+    _note("Tags are defined now and enforced at Observability expansion.")
 
     cost_center_values_input = _prompt(
         "Cost center tag values (comma-separated, e.g. engineering,analytics,product)",
@@ -327,7 +327,7 @@ def _section_tags() -> dict:
             "apply_to": ["table", "column"],
         })
 
-    return {"required_tags": required_tags, "optional_tags": optional_tags, "enforcement_stage": "crawl"}
+    return {"required_tags": required_tags, "optional_tags": optional_tags, "enforcement_stage": "core"}
 
 
 def _section_emergency_access() -> dict:
@@ -418,7 +418,7 @@ def _write_decisions_md(
         "| Decision | Options considered | Choice made | Reason | Reference |",
         "|----------|-------------------|-------------|--------|-----------|",
         "| Database structure | Per-source vs shared RAW | Per-source | Stronger isolation — each connector scoped to its own DB | PHILOSOPHY.md §Connector Role Philosophy |",
-        f"| Maturity target | Crawl / Walk / Run | {context['maturity_target'].capitalize()} | Structure first, enforcement second | PHILOSOPHY.md §The Maturity Model |",
+        f"| Maturity target | Core / Observability / Enforcement | {context['maturity_target'].capitalize()} | Structure first, enforcement second | PHILOSOPHY.md §The Maturity Model |",
         "| Warehouse topology | Single shared vs workload-separated | Workload-separated | Noisy neighbor rule | PHILOSOPHY.md §Warehouse Isolation Standard |",
         "| Service account auth | Password vs key-pair | Key-pair (RSA) | Audit trail + rotation safety | PHILOSOPHY.md §Core Principles #8 |",
         "| Connector role pattern | Functional roles only vs connector layer | Connector layer | LOADER is too broad | PHILOSOPHY.md §Connector Role Philosophy |",

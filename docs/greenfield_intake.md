@@ -35,11 +35,11 @@ yet and give you opinionated defaults where you don't have a preference.
 | Service accounts (integrations) | |
 
 **1.3 What is your current maturity target?**
-- [ ] Crawl — get the structure right, eliminate the worst anti-patterns
-- [ ] Walk — crawl plus full observability and cost attribution
-- [ ] Run — full automated enforcement from day one
+- [ ] Core — get the structure right, eliminate the worst anti-patterns
+- [ ] Observability — core plus full observability and cost attribution
+- [ ] Enforcement — full automated enforcement from day one
 
-*If unsure, start with Crawl. See PHILOSOPHY.md — The Maturity Model.*
+*If unsure, start with Core. See PHILOSOPHY.md — The Maturity Model.*
 
 ---
 
@@ -256,7 +256,7 @@ resolved?)*
 |----------|-------------------|-------------|--------|-----------|
 | Database structure | Per-source vs shared RAW | | | PHILOSOPHY.md §Connector Role Philosophy |
 | Warehouse sizing | XS / S / M per workload | | | |
-| Maturity target | Crawl / Walk / Run | | | PHILOSOPHY.md §Maturity Model |
+| Maturity target | Core / Observability / Enforcement | | | PHILOSOPHY.md §Maturity Model |
 | | | | | |
 
 ---

@@ -29,7 +29,7 @@ optional_tags:                       # Recommended but not enforced at Walk stag
     values: ["true", "false"]
     apply_to: [table, column]
 
-enforcement_stage: crawl             # crawl | walk | run
-# crawl: tags defined but not enforced
-# walk: required_tags enforced on new objects via tag policy
-# run: tag policy blocks object creation if required tags are missing
+enforcement_stage: core              # core | observability | enforcement
+# core: tags defined but not enforced
+# observability: required_tags enforced on new objects via tag policy
+# enforcement: tag policy blocks object creation if required tags are missing

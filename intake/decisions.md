@@ -17,7 +17,7 @@ It is an audit trail and onboarding document — not consumed by Terraform.
 | Environment purpose | ___________________ |
 | Intake date | ___________________ |
 | Engineer | ___________________ |
-| Maturity target | Crawl / Walk / Run |
+| Maturity target | Core / Observability / Enforcement |
 
 ---
 
@@ -27,7 +27,7 @@ It is an audit trail and onboarding document — not consumed by Terraform.
 |----------|-------------------|-------------|--------|-----------|
 | Database structure | Per-source vs shared RAW | Per-source (RAW_FIVETRAN, RAW_AIRFLOW, EVENTS, ANALYTICS, MARTS) | Stronger isolation — a compromised Fivetran credential has no visibility into Airflow schemas or event streams | PHILOSOPHY.md §Connector Role Philosophy |
 | Warehouse topology | Single shared vs workload-separated | Workload-separated (WH_INGEST, WH_TRANSFORM, WH_ANALYTICS) | Noisy neighbor rule — transformation jobs competing with analyst queries degrades both | PHILOSOPHY.md §The Warehouse Isolation Standard |
-| Maturity target | Crawl / Walk / Run | Crawl | Structure first, enforcement second — Walk enforcement added once baseline is stable | PHILOSOPHY.md §The Maturity Model |
+| Maturity target | Core / Observability / Enforcement | Core | Structure first, enforcement second — Observability expansion added once baseline is stable | PHILOSOPHY.md §The Maturity Model |
 | Connector role pattern | Functional roles only vs connector layer | Connector layer (CONN_{NAME}) | LOADER is too broad — each integration gets its own scoped role | PHILOSOPHY.md §The Connector Role Philosophy |
 | Service account auth | Password vs key-pair | Key-pair (RSA) | Passwords cannot be audited for access; key-pair auth is the baseline for all service accounts | PHILOSOPHY.md §Core Principles #8 |
 | FIREFIGHTER activation | Self-service vs named approvers | Named approvers (see Emergency Access below) | Dormant role must have an explicit approval gate — self-service defeats the purpose | PHILOSOPHY.md §Core Principles #4 |

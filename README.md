@@ -2,8 +2,8 @@
 
 *Flynn Data Services — A forkable, config-driven Snowflake governance implementation*
 
-This repository demonstrates a high-maturity Snowflake environment using a crawl/walk/run
-maturity model. It is designed to be forked per client engagement and adapted via a structured
+This repository demonstrates a high-maturity Snowflake environment using a core + expansion
+model. It is designed to be forked per client engagement and adapted via a structured
 intake process — not by hand-editing Terraform modules.
 
 ---
@@ -35,7 +35,7 @@ Snowflake resources
 
 ## Maturity Model
 
-### Crawl — Structural Integrity (this phase)
+### Core — Structural Integrity
 
 - RBAC hierarchy correct and documented
 - One connector role per integration
@@ -44,18 +44,11 @@ Snowflake resources
 - All warehouses have resource monitors
 - `decisions.md` captures why the environment is structured as it is
 
-### Walk — Observability (next phase)
+### Available Expansions
 
-- Tag enforcement on all new objects
-- Eval suite running on a schedule
-- CI/CD running `terraform plan` on RBAC changes
-- Cost attribution working by team
+**Observability** — adds a tag eval suite, cost attribution via warehouse tags, WAREHOUSE_METERING_HISTORY audit trail, and an Evidence dashboard that tracks compliance trends week-over-week. Adopt when your team is ready for visibility but enforcement feels premature. See [docs/EXPANSION_OBSERVABILITY.md](docs/EXPANSION_OBSERVABILITY.md).
 
-### Run — Automated Enforcement
-
-- Tag policies block untagged object creation
-- Unexpected `terraform plan` deltas treated as security incidents
-- FIREFIGHTER assignment triggers automated incident
+**Enforcement** — adds Snowflake tag policies that block untagged object creation, automated audit log entries on FIREFIGHTER activation, and a GitHub Actions PR check that diffs RBAC changes against defined policies. Adopt for larger teams across business units, regulated industries, or when Observability shows persistent drift. See [docs/EXPANSION_ENFORCEMENT.md](docs/EXPANSION_ENFORCEMENT.md).
 
 ---
 

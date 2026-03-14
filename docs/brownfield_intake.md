@@ -281,7 +281,7 @@ convention:**
 
 ### 2.6 Migration Appetite
 
-- What is the target maturity stage? (Crawl / Walk / Run)
+- What is the target maturity stage? (Core / Observability / Enforcement)
 - Is there a deadline or milestone driving this work?
 - How much disruption is acceptable during migration? (e.g. are brief access
   outages acceptable during off-hours?)

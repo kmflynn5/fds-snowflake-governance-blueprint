@@ -10,7 +10,7 @@
 #
 # References:
 #   PHILOSOPHY.md §The Warehouse Isolation Standard
-#   PHILOSOPHY.md §Maturity Model — Crawl (resource monitors required at Crawl)
+#   PHILOSOPHY.md §Maturity Model — Core (resource monitors required at Core)
 #   SPEC.md §Part 3 — Default Warehouse Topology
 
 resource "snowflake_warehouse" "this" {
