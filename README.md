@@ -132,6 +132,8 @@ tests/
 docs/
   PHILOSOPHY.md              ← governance principles — read first
   QUICK_START.md             ← full setup steps (greenfield + brownfield)
+  EXPANSION_OBSERVABILITY.md ← observability expansion: eval suite, cost attribution, dashboard
+  EXPANSION_ENFORCEMENT.md   ← enforcement expansion: tag policies, FIREFIGHTER alert, CI/CD gates
   greenfield_intake.md       ← greenfield questionnaire
   brownfield_intake.md       ← brownfield survey + interview
   GREENFIELD_TESTING_PLAN.md ← end-to-end trial run guide

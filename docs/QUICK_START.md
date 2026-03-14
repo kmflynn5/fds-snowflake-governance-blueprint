@@ -50,7 +50,7 @@ terraform apply
 ```bash
 # Step 1: generate audit keypair
 uv run scripts/audit.py keygen
-# Share public key with client → client runs scripts/audit_setup.sql
+# Share public key with client → client follows scripts/AUDIT_SETUP.md to create the audit user
 
 # Step 2: run audit
 export SNOWFLAKE_ACCOUNT="your-account"
