@@ -2,17 +2,17 @@
 scripts/generate_tf.py — Config-to-Terraform codegen
 
 Reads intake/connectors.yaml + intake/tags.yaml and outputs .auto.tfvars.json
-files to terraform/generated/.
+files to terraform/ (the root Terraform directory, so they are auto-loaded).
 
 Output files:
-    terraform/generated/databases.auto.tfvars.json
-    terraform/generated/warehouses.auto.tfvars.json
-    terraform/generated/rbac.auto.tfvars.json
+    terraform/databases.auto.tfvars.json
+    terraform/warehouses.auto.tfvars.json
+    terraform/rbac.auto.tfvars.json
 
 Usage:
     uv run scripts/generate_tf.py
     uv run scripts/generate_tf.py --connectors custom/connectors.yaml
-    uv run scripts/generate_tf.py --output-dir terraform/generated
+    uv run scripts/generate_tf.py --output-dir terraform
 """
 
 from __future__ import annotations
@@ -284,7 +284,7 @@ def write_tfvars(output_dir: str, databases: dict, warehouses: dict, rbac: dict)
 )
 @click.option(
     "--output-dir",
-    default="terraform/generated",
+    default="terraform",
     show_default=True,
     help="Output directory for .auto.tfvars.json files",
 )

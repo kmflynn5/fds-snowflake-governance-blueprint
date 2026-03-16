@@ -119,36 +119,33 @@ GRANT ROLE TF_SYSADMIN TO USER TF_SYSADMIN;
 ## Step 2 — Configure Environment Variables
 
 The provider reads auth from env vars automatically — no HCL configuration
-needed. Add these to your shell (or a local `.env` file you source before
-running Terraform):
+needed. Create a `.env` file in `terraform/` and source it before running
+Terraform (`.env` is gitignored):
 
 ```bash
-export SNOWFLAKE_ACCOUNT="<your-account-identifier>"   # e.g. myorg-xy12345
-export SNOWFLAKE_USER="TF_SYSADMIN"
-export SNOWFLAKE_PRIVATE_KEY_PATH="$HOME/.snowflake/tf_rsa_key.pem"
-export SNOWFLAKE_ROLE="TF_SYSADMIN"
+SNOWFLAKE_ORGANIZATION_NAME="<org-name>"       # e.g. MYORG (before the dash)
+SNOWFLAKE_ACCOUNT_NAME="<account-name>"        # e.g. XY12345 (after the dash)
+SNOWFLAKE_USER="TF_SYSADMIN"
+SNOWFLAKE_PRIVATE_KEY_PATH="$HOME/.snowflake/tf_rsa_key.pem"
+SNOWFLAKE_ROLE="TF_SYSADMIN"
+SNOWFLAKE_AUTHENTICATOR="SNOWFLAKE_JWT"
 ```
 
-Verify the connection before proceeding:
+Your account identifier appears in the Snowsight URL:
+`https://<org-name>-<account-name>.snowflakecomputing.com`
+
+Source the file and verify the connection before proceeding:
 
 ```bash
-# Quick connection test via snowflake-connector-python (already in dev deps)
-uv run python -c "
-import snowflake.connector, os
-conn = snowflake.connector.connect(
-    account=os.environ['SNOWFLAKE_ACCOUNT'],
-    user=os.environ['SNOWFLAKE_USER'],
-    private_key_file=os.environ['SNOWFLAKE_PRIVATE_KEY_PATH'],
-    role=os.environ['SNOWFLAKE_ROLE'],
-)
-cur = conn.cursor()
-cur.execute('SELECT CURRENT_ROLE(), CURRENT_ACCOUNT()')
-print(cur.fetchone())
-conn.close()
-"
-```
+set -a; source .env; set +a
 
-Expected output: `('TF_SYSADMIN', '<your account>')`
+snow connection add -n tf_sysadmin -u TF_SYSADMIN -r TF_SYSADMIN \
+  -k ~/.snowflake/tf_rsa_key.pem -a <org-name>-<account-name>
+# authenticator: SNOWFLAKE_JWT
+
+snow connection test -c tf_sysadmin
+# Expected: Status OK, Role: TF_SYSADMIN
+```
 
 ---
 
@@ -178,10 +175,10 @@ uv run scripts/generate_tf.py
 ```
 
 This reads `intake/connectors.yaml` and writes three files to
-`terraform/generated/`:
+`terraform/`:
 
 ```
-terraform/generated/
+terraform/
   databases.auto.tfvars.json    # databases + schemas
   warehouses.auto.tfvars.json   # warehouses with sizes + resource monitor config
   rbac.auto.tfvars.json         # roles, object roles, grant mappings
@@ -191,10 +188,10 @@ Spot-check the output before applying:
 
 ```bash
 # Warehouses — should match connectors.yaml warehouse fields
-python -m json.tool terraform/generated/warehouses.auto.tfvars.json
+python -m json.tool terraform/warehouses.auto.tfvars.json
 
 # RBAC — verify connector roles and object role mappings
-python -m json.tool terraform/generated/rbac.auto.tfvars.json | head -80
+python -m json.tool terraform/rbac.auto.tfvars.json | head -80
 ```
 
 Run unit tests to confirm no regressions in codegen logic:

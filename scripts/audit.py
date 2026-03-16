@@ -527,7 +527,7 @@ def report(survey_dir: str):
         "2. Run the intake interview: `uv run scripts/intake_interview.py --brownfield`",
         "3. Review and finalize `intake/connectors.yaml` and `intake/decisions.md`",
         "4. Run codegen: `uv run scripts/generate_tf.py`",
-        "5. Review `terraform/generated/` and apply",
+        "5. Review `terraform/*.auto.tfvars.json` and apply",
     ]
 
     report_path.write_text("\n".join(lines) + "\n")

@@ -91,15 +91,41 @@ locals {
   }
 }
 
-# Specific schema grants
+# Specific schema grants — schema-level USAGE only
+# Table-level privileges (INSERT, SELECT) are handled by object_schema_future_tables below.
 resource "snowflake_grant_privileges_to_account_role" "object_schema_privileges" {
   for_each = local.schema_privilege_grants
 
   account_role_name = snowflake_account_role.object[each.value.role_name].name
-  privileges        = each.value.privileges
+  privileges        = ["USAGE"]
 
   on_schema {
     schema_name = "${each.value.database}.${each.value.schema}"
+  }
+}
+
+# Future table grants within specific schemas
+locals {
+  schema_table_grants = {
+    for k, v in local.schema_privilege_grants :
+    k => merge(v, {
+      table_privileges = [for p in v.privileges : p if contains(["SELECT", "INSERT"], p)]
+    })
+    if length([for p in v.privileges : p if contains(["SELECT", "INSERT"], p)]) > 0
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "object_schema_future_tables" {
+  for_each = local.schema_table_grants
+
+  account_role_name = snowflake_account_role.object[each.value.role_name].name
+  privileges        = each.value.table_privileges
+
+  on_schema_object {
+    future {
+      object_type_plural = "TABLES"
+      in_schema          = "${each.value.database}.${each.value.schema}"
+    }
   }
 }
 

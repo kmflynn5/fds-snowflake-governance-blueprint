@@ -34,7 +34,7 @@ uv run scripts/intake_interview.py --greenfield
 uv run scripts/generate_tf.py
 
 # Review output
-python -m json.tool terraform/generated/rbac.auto.tfvars.json
+python -m json.tool terraform/rbac.auto.tfvars.json
 
 # Apply
 cd terraform

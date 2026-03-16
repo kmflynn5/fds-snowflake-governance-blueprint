@@ -20,7 +20,7 @@ connectors.yaml + tags.yaml        ← the only files you edit per engagement
 scripts/generate_tf.py             ← derives databases, warehouses, RBAC structure
     │
     ▼
-terraform/generated/*.auto.tfvars.json
+terraform/*.auto.tfvars.json
     │
     ▼
 terraform modules (for_each)       ← no HCL changes needed per engagement
@@ -145,7 +145,7 @@ docs/
 
 This repo is designed to be forked per client engagement. Before you do:
 
-**`terraform/generated/*.auto.tfvars.json` are committed by design** — they're the
+**`terraform/*.auto.tfvars.json` are committed by design** — they're the
 reviewable artifact of the codegen step. In this template repo they contain only
 example data. In a fork for a real client, they'll contain actual database names,
 role names, and warehouse names.
@@ -158,7 +158,7 @@ Choose one of:
 2. **Gitignore generated output in the fork.** If you want a public fork (e.g. as a
    sanitized case study), add this to the fork's `.gitignore`:
    ```
-   terraform/generated/
+   terraform/*.auto.tfvars.json
    ```
    Then regenerate from a sanitized `connectors.yaml` before publishing.
 

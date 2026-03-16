@@ -3,9 +3,9 @@
 # Root module — wires databases, warehouses, and RBAC modules together.
 #
 # Configuration is driven by generated .auto.tfvars.json files:
-#   terraform/generated/databases.auto.tfvars.json
-#   terraform/generated/warehouses.auto.tfvars.json
-#   terraform/generated/rbac.auto.tfvars.json
+#   terraform/databases.auto.tfvars.json
+#   terraform/warehouses.auto.tfvars.json
+#   terraform/rbac.auto.tfvars.json
 #
 # To update infrastructure:
 #   1. Edit intake/connectors.yaml
