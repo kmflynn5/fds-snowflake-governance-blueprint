@@ -76,7 +76,7 @@ executing `scripts/verify_roles.sql` to confirm the role topology.
 ## Relationship Between Repos
 
 ```
-github.com/kmflynn5/fds-snowflake-maturation-blueprint   (this repo)
+github.com/kmflynn5/fds-snowflake-governance-blueprint   (this repo)
 │
 │   Terraform modules, connectors.yaml schema,
 │   intake process, PHILOSOPHY.md

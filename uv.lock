@@ -272,7 +272,7 @@ wheels = [
 ]
 
 [[package]]
-name = "fds-snowflake-maturation-blueprint"
+name = "fds-snowflake-governance-blueprint"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
