@@ -14,19 +14,33 @@
 
 USE ROLE ACCOUNTADMIN;
 
--- Terraform automation role — inherits SYSADMIN + SECURITYADMIN for full infra scope
--- (SECURITYADMIN is required for CREATE ROLE and GRANT ROLE operations)
+-- Terraform automation role.
+-- Role grants and why each is required:
+--   SYSADMIN      — create databases, warehouses
+--   SECURITYADMIN — create roles, manage grants
+--   ACCOUNTADMIN  — CREATE RESOURCE MONITOR (cannot be delegated to lower roles)
+--
+-- TRADEOFF: TF_SYSADMIN holds ACCOUNTADMIN. Risk is low — no password, no
+-- interactive login — but this violates least-privilege for a service account.
+--
+-- For tighter security after initial apply, revoke ACCOUNTADMIN and re-grant
+-- only when resource monitor config is changing:
+--   snow sql -q "REVOKE ROLE ACCOUNTADMIN FROM ROLE TF_SYSADMIN;" -c admin
+--
+-- TODO (Walk stage): replace manual grant/revoke with a second Terraform
+-- provider alias scoped to ACCOUNTADMIN for resource monitor resources only.
+-- See: docs/GREENFIELD_TESTING_PLAN.md §Known Limitations — TF_SYSADMIN
 CREATE ROLE IF NOT EXISTS TF_SYSADMIN
   COMMENT = 'Terraform automation role — infrastructure apply only';
 
 GRANT ROLE SYSADMIN      TO ROLE TF_SYSADMIN;
 GRANT ROLE SECURITYADMIN TO ROLE TF_SYSADMIN;
-GRANT ROLE ACCOUNTADMIN  TO ROLE TF_SYSADMIN;  -- required for CREATE RESOURCE MONITOR
+GRANT ROLE ACCOUNTADMIN  TO ROLE TF_SYSADMIN;
 
 CREATE USER IF NOT EXISTS TF_SYSADMIN
   DEFAULT_ROLE      = TF_SYSADMIN
   DEFAULT_WAREHOUSE = NULL
-  RSA_PUBLIC_KEY    = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6LwbRuNrYT3fSDaAHUC3JyFxXYwEb9+tC+B5xHjp6kZpir4Itmamh3zIqkCVpnW+10hd+qSqjyggUQyl/AhvkBXiWhs51fBuA+gR7Cfwb2ZpLTfk8NHKnVzT6F/n46/6Zd/h5JogHYWCqiFog1659kwaQp3I0x6RdELiG8yCCzdSscwg8ZglHj8WEyGlH5sr4HuUedAJhrlKFbdQgFquSlCUEqxKGEztMAUeeOkZbNWumKPLFpJlVm/5ZTGZgqJwL6Vd44a7oIIDyvrsP3wP4Akm8Vhm4R0iaQ4z89iS3AMWF0JXtPMllOGvo5Ptm1pCyh9uq5XsB1gPTiV4nfuU/QIDAQAB'
+  RSA_PUBLIC_KEY    = '<PASTE_PUBLIC_KEY_HERE>'
   COMMENT           = 'Terraform service account — key-pair auth only, no password';
 
 GRANT ROLE TF_SYSADMIN TO USER TF_SYSADMIN;

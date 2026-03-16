@@ -20,11 +20,10 @@ see `docs/GREENFIELD_TESTING_PLAN.md`.
 # Install uv (if not already installed — see https://docs.astral.sh/uv/getting-started/installation/)
 uv sync --group dev
 
-# Set auth env vars (see docs/GREENFIELD_TESTING_PLAN.md §Step 2)
-export SNOWFLAKE_ACCOUNT="<account-identifier>"
-export SNOWFLAKE_USER="TF_SYSADMIN"
-export SNOWFLAKE_PRIVATE_KEY_PATH="$HOME/.snowflake/tf_rsa_key.pem"
-export SNOWFLAKE_ROLE="TF_SYSADMIN"
+# Set auth env vars in terraform/.env then source it (see docs/GREENFIELD_TESTING_PLAN.md §Step 2)
+# SNOWFLAKE_ORGANIZATION_NAME, SNOWFLAKE_ACCOUNT_NAME, SNOWFLAKE_USER,
+# SNOWFLAKE_PRIVATE_KEY_PATH, SNOWFLAKE_ROLE, SNOWFLAKE_AUTHENTICATOR=SNOWFLAKE_JWT
+set -a; source terraform/.env; set +a
 
 # Run the intake interview
 uv run scripts/intake_interview.py --greenfield
@@ -53,9 +52,11 @@ uv run scripts/audit.py keygen
 # Share public key with client → client follows scripts/AUDIT_SETUP.md to create the audit user
 
 # Step 2: run audit
-export SNOWFLAKE_ACCOUNT="your-account"
+export SNOWFLAKE_ORGANIZATION_NAME="<org-name>"
+export SNOWFLAKE_ACCOUNT_NAME="<account-name>"
 export SNOWFLAKE_USER="FDS_AUDITOR_USER"
 export SNOWFLAKE_PRIVATE_KEY_PATH="./audit_key.p8"
+export SNOWFLAKE_AUTHENTICATOR="SNOWFLAKE_JWT"
 export SNOWFLAKE_WAREHOUSE="COMPUTE_WH"
 
 uv run scripts/audit.py audit

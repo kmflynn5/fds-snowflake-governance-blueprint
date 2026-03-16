@@ -89,28 +89,25 @@ grep -v "^-----" ~/.snowflake/tf_rsa_key.pub | tr -d '\n'
 
 ### 1b. Create the service account in Snowflake
 
-```sql
--- Run as ACCOUNTADMIN in Snowsight
-USE ROLE ACCOUNTADMIN;
+Use `scripts/setup_tf_account.sql` via the `snow` CLI — do **not** run it
+via copy/paste as the public key must be injected by the sed substitution:
 
--- Terraform operates as SYSADMIN for infrastructure work
-CREATE ROLE IF NOT EXISTS TF_SYSADMIN
-  COMMENT = 'Terraform automation role — infrastructure apply only';
-
-GRANT ROLE SYSADMIN TO ROLE TF_SYSADMIN;
-
-CREATE USER IF NOT EXISTS TF_SYSADMIN
-  DEFAULT_ROLE     = TF_SYSADMIN
-  DEFAULT_WAREHOUSE = NULL
-  RSA_PUBLIC_KEY   = '<paste_public_key_here>'
-  COMMENT          = 'Terraform service account — key-pair auth only, no password';
-
-GRANT ROLE TF_SYSADMIN TO USER TF_SYSADMIN;
+```bash
+PUB_KEY=$(grep -v "^-----" ~/.snowflake/tf_rsa_key.pub | tr -d '\n')
+sed "s|<PASTE_PUBLIC_KEY_HERE>|$PUB_KEY|" scripts/setup_tf_account.sql \
+  | snow sql --stdin -c admin
 ```
 
-> **Why TF_SYSADMIN and not ACCOUNTADMIN?**
-> Terraform only needs to create roles, databases, warehouses, and grants —
-> all of which are within SYSADMIN's scope. ACCOUNTADMIN is reserved for
+This creates `TF_SYSADMIN` with the following role grants:
+- `SYSADMIN` — create databases, warehouses
+- `SECURITYADMIN` — create roles, manage grants
+- `ACCOUNTADMIN` — required for `CREATE RESOURCE MONITOR`
+
+> **Why not just ACCOUNTADMIN for everything?**
+> Terraform only needs the above three roles for infrastructure apply.
+> ACCOUNTADMIN is granted here because `CREATE RESOURCE MONITOR` requires it —
+> but the service account has no interactive login and no password, so the
+> blast radius is limited. ACCOUNTADMIN is reserved for
 > account-level administration and should have zero active session assignments
 > in any environment. See `docs/PHILOSOPHY.md §Core Principles #4`.
 
@@ -373,6 +370,35 @@ part of this trial:
 | CI/CD terraform plan gate | Observability | `.github/workflows/terraform-plan.yml` not yet built |
 | FIREFIGHTER activation alerting | Enforcement | Manual check only at this stage |
 | Cost anomaly detection | Observability | Resource monitors alert on budget, not on anomalies |
+| TF_SYSADMIN privilege scoping | Enforcement | See below |
+
+### TF_SYSADMIN and ACCOUNTADMIN
+
+`CREATE RESOURCE MONITOR` requires `ACCOUNTADMIN` — it cannot be delegated to
+SYSADMIN or SECURITYADMIN. `TF_SYSADMIN` is currently granted all three roles
+so a single `terraform apply` can complete without interruption.
+
+**Tradeoff:** TF_SYSADMIN has broad privileges. The risk is low because the
+account has no password and no interactive login, but it violates the
+least-privilege principle for a production service account.
+
+**Option A — revoke after initial apply (manual runbook):**
+```sql
+-- After first apply (resource monitors created)
+REVOKE ROLE ACCOUNTADMIN FROM ROLE TF_SYSADMIN;
+
+-- Re-grant only when resource monitor config is changing
+GRANT ROLE ACCOUNTADMIN TO ROLE TF_SYSADMIN;
+-- terraform apply
+REVOKE ROLE ACCOUNTADMIN FROM ROLE TF_SYSADMIN;
+```
+
+**TODO (Walk stage):** Implement Option B — a second Terraform provider alias
+scoped to ACCOUNTADMIN, used only for `snowflake_resource_monitor` resources.
+This keeps the primary TF service account at SYSADMIN+SECURITYADMIN and
+eliminates the need for a manual grant/revoke runbook. Track in `Makefile`
+targets (`make tf-plan`, `make tf-apply`) that wrap the grant/revoke
+automatically when the ACCOUNTADMIN alias is not yet available.
 
 For a Core-stage engagement, the manual Snowsight checks in Step 9 are the
 verification layer. The eval suite (Observability expansion) is what automates
