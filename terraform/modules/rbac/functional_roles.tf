@@ -107,3 +107,130 @@ resource "snowflake_grant_account_role" "analyst_to_sysadmin" {
   role_name        = snowflake_account_role.analyst.name
   parent_role_name = "SYSADMIN"
 }
+
+# ---------------------------------------------------------------------------
+# Generated human functional roles (from intake/team.yaml)
+#
+# One role per persona. All roles granted to SYSADMIN.
+# Human users are assigned to these roles — never to connector or object roles.
+#
+# See PHILOSOPHY.md: "Human users hold functional roles."
+# ---------------------------------------------------------------------------
+
+resource "snowflake_account_role" "human_functional" {
+  for_each = { for r in var.functional_roles : r.name => r }
+  name     = each.key
+  comment  = each.value.reason
+}
+
+resource "snowflake_grant_account_role" "human_functional_to_sysadmin" {
+  for_each         = { for r in var.functional_roles : r.name => r }
+  role_name        = snowflake_account_role.human_functional[each.key].name
+  parent_role_name = "SYSADMIN"
+  depends_on       = [snowflake_account_role.human_functional]
+}
+
+resource "snowflake_grant_privileges_to_account_role" "human_functional_warehouse" {
+  for_each = {
+    for r in var.functional_roles : r.name => r
+    if r.warehouse != null && r.warehouse != ""
+  }
+  account_role_name = snowflake_account_role.human_functional[each.key].name
+  privileges        = ["USAGE"]
+  on_account_object {
+    object_type = "WAREHOUSE"
+    object_name = each.value.warehouse
+  }
+}
+
+locals {
+  # Unique (role, database) pairs — for database USAGE grants
+  functional_db_usage = {
+    for g in var.functional_role_grants :
+    "${g.role}__${g.database}" => { role = g.role, database = g.database }
+  }
+
+  # Database-level future grants (schema == null → schemas: ["*"])
+  functional_db_future = {
+    for g in var.functional_role_grants :
+    "${g.role}__${g.database}__${g.privilege}" => g
+    if g.schema == null
+  }
+
+  # Database-level future schema USAGE (so new schemas are visible after wildcard grants)
+  functional_wildcard_db_pairs = {
+    for g in var.functional_role_grants :
+    "${g.role}__${g.database}" => { role = g.role, database = g.database }
+    if g.schema == null
+  }
+
+  # Unique (role, database, schema) pairs — for schema USAGE grants
+  functional_schema_usage = {
+    for g in var.functional_role_grants :
+    "${g.role}__${g.database}__${g.schema}" => {
+      role     = g.role
+      database = g.database
+      schema   = g.schema
+    }
+    if g.schema != null
+  }
+
+  # Schema-level future grants (schema != null → named schemas)
+  functional_schema_future = {
+    for g in var.functional_role_grants :
+    "${g.role}__${g.database}__${g.schema}__${g.privilege}" => g
+    if g.schema != null
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "human_functional_db_usage" {
+  for_each          = local.functional_db_usage
+  account_role_name = snowflake_account_role.human_functional[each.value.role].name
+  privileges        = ["USAGE"]
+  on_account_object {
+    object_type = "DATABASE"
+    object_name = each.value.database
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "human_functional_db_future" {
+  for_each          = local.functional_db_future
+  account_role_name = snowflake_account_role.human_functional[each.value.role].name
+  privileges        = [each.value.privilege]
+  on_schema_object {
+    future {
+      object_type_plural = "TABLES"
+      in_database        = each.value.database
+    }
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "human_functional_future_schema_usage" {
+  for_each          = local.functional_wildcard_db_pairs
+  account_role_name = snowflake_account_role.human_functional[each.value.role].name
+  privileges        = ["USAGE"]
+  on_schema {
+    future_schemas_in_database = each.value.database
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "human_functional_schema_usage" {
+  for_each          = local.functional_schema_usage
+  account_role_name = snowflake_account_role.human_functional[each.value.role].name
+  privileges        = ["USAGE"]
+  on_schema {
+    schema_name = "${each.value.database}.${each.value.schema}"
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "human_functional_schema_future" {
+  for_each          = local.functional_schema_future
+  account_role_name = snowflake_account_role.human_functional[each.value.role].name
+  privileges        = [each.value.privilege]
+  on_schema_object {
+    future {
+      object_type_plural = "TABLES"
+      in_schema          = "${each.value.database}.${each.value.schema}"
+    }
+  }
+}

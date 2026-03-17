@@ -44,6 +44,8 @@ module "rbac" {
   connector_type_mapping          = var.connector_type_mapping
   databases                       = module.databases.database_names
   warehouses                      = module.warehouses.warehouse_names
+  functional_roles                = var.functional_roles
+  functional_role_grants          = var.functional_role_grants
 
   depends_on = [module.databases, module.warehouses]
 }

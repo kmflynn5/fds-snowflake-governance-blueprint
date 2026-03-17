@@ -52,3 +52,25 @@ variable "warehouses" {
   type        = map(string)
   default     = {}
 }
+
+variable "functional_roles" {
+  description = "Human functional roles — generated from team.yaml by generate_tf.py."
+  type = list(object({
+    name      = string
+    warehouse = string
+    reason    = string
+  }))
+  default = []
+}
+
+variable "functional_role_grants" {
+  description = "Flattened privilege grants for human functional roles. One entry per role/db/schema/privilege."
+  type = list(object({
+    role      = string
+    database  = string
+    schema    = optional(string)
+    privilege = string
+    future    = bool
+  }))
+  default = []
+}

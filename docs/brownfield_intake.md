@@ -78,7 +78,30 @@ ORDER BY last_success_login DESC NULLS LAST;
 - Users with no default role set (will inherit PUBLIC only — often a
   misconfiguration)
 
-### 1.3 Direct Object Grants to Users
+### 1.3 Human User Role Assignments
+
+```sql
+-- Active human users and their current role assignments
+SELECT
+    u.name AS user_name, u.login_name, u.type AS user_type,
+    g.role AS granted_role, u.last_success_login
+FROM snowflake.account_usage.users u
+LEFT JOIN snowflake.account_usage.grants_to_users g
+    ON u.name = g.grantee_name
+WHERE u.deleted_on IS NULL
+    AND u.type NOT IN ('SERVICE', 'LEGACY_SERVICE')
+ORDER BY u.last_success_login DESC NULLS LAST;
+```
+
+**What to look for:**
+- Humans assigned to object roles directly (e.g. `OBJ_ANALYTICS_READER`) — should
+  only hold functional roles
+- SYSADMIN assignments used for daily work (should be reserved for infrastructure
+  setup only)
+- Users without a matching functional persona — signals ad-hoc role creation or
+  missing team structure definition
+
+### 1.5 Direct Object Grants to Users
 
 ```sql
 -- Any privilege granted directly to a user (should be zero in a governed env)
@@ -92,7 +115,7 @@ WHERE granted_on != 'ROLE'
 - Any results here are findings. Direct object grants to users bypass the
   role hierarchy entirely.
 
-### 1.4 Warehouse Inventory
+### 1.6 Warehouse Inventory
 
 ```sql
 -- All warehouses, sizing, and current state
@@ -117,7 +140,7 @@ ORDER BY total_credits DESC;
 - Single warehouse handling all workloads (ingestion, transformation, and
   analytics competing for the same compute)
 
-### 1.5 Resource Monitor Coverage
+### 1.7 Resource Monitor Coverage
 
 ```sql
 -- Warehouses without resource monitors
@@ -132,7 +155,7 @@ WHERE w.deleted_on IS NULL
 **What to look for:**
 - Any warehouse without a resource monitor is an uncontrolled cost exposure.
 
-### 1.6 Tag Coverage
+### 1.8 Tag Coverage
 
 ```sql
 -- Objects with tags applied
@@ -156,7 +179,7 @@ ORDER BY 1, 2;
 - Databases and schemas with zero tag coverage (Walk stage gap)
 - Inconsistent tag keys across objects (signals no enforced taxonomy)
 
-### 1.7 Recent ACCOUNTADMIN Activity
+### 1.9 Recent ACCOUNTADMIN Activity
 
 ```sql
 -- Query history where ACCOUNTADMIN was the active role
@@ -180,7 +203,7 @@ LIMIT 100;
 - Frequency: occasional setup queries are expected, daily operational queries
   are a finding
 
-### 1.8 Service Account Activity Patterns
+### 1.10 Service Account Activity Patterns
 
 ```sql
 -- Query volume by user last 30 days (surfaces active service accounts)

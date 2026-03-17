@@ -1,0 +1,67 @@
+# team.yaml — human user functional roles
+# Generated during intake. Edit this file to add or remove personas.
+# One entry per functional role. Service accounts belong in connectors.yaml.
+#
+# warehouse: must match a warehouse name defined in connectors.yaml
+# database_access: list of databases and the schemas + privileges needed
+#   schemas: use ["*"] for future grants across all schemas in the database
+#   privileges: SELECT for read-only, add INSERT/CREATE TABLE/CREATE SCHEMA for write
+# reason: required — documents why this role exists and what it covers
+
+functional_roles:
+
+  - name: DATA_ENGINEER
+    warehouse: TRANSFORM
+    database_access:
+      - db: RAW_FIVETRAN
+        schemas: ["*"]
+        privileges: [SELECT]
+        reason: "Read raw Fivetran data for pipeline development and debugging"
+      - db: RAW_AIRFLOW
+        schemas: ["*"]
+        privileges: [SELECT]
+        reason: "Read raw Airflow data for pipeline development and debugging"
+      - db: EVENTS
+        schemas: ["*"]
+        privileges: [SELECT]
+        reason: "Read event stream data for pipeline development"
+      - db: ANALYTICS
+        schemas: ["*"]
+        privileges: [SELECT, INSERT, CREATE TABLE, CREATE SCHEMA]
+        reason: "Build and maintain analytics layer — full write access"
+    reason: "Data engineers — read all RAW databases, full write access to ANALYTICS"
+
+  - name: DATA_ANALYST
+    warehouse: ANALYTICS
+    database_access:
+      - db: ANALYTICS
+        schemas: ["MARTS", "REPORTS"]
+        privileges: [SELECT]
+        reason: "Read-only access to curated analytics layer"
+    reason: "Analysts — read-only on MARTS and REPORTS schemas in ANALYTICS"
+
+  - name: BI_DEVELOPER
+    warehouse: ANALYTICS
+    database_access:
+      - db: ANALYTICS
+        schemas: ["MARTS", "REPORTS"]
+        privileges: [SELECT]
+        reason: "Same read scope as analysts — separate role for audit trail and future divergence"
+    reason: "BI tool developers — read ANALYTICS layer, separate role from DATA_ANALYST"
+
+  - name: DATA_SCIENTIST
+    warehouse: ML
+    database_access:
+      - db: RAW_FIVETRAN
+        schemas: ["*"]
+        privileges: [SELECT]
+        reason: "Read raw data for feature engineering"
+      - db: EVENTS
+        schemas: ["*"]
+        privileges: [SELECT]
+        reason: "Read event stream for behavioral modeling"
+      - db: ANALYTICS
+        schemas: ["MARTS"]
+        privileges: [SELECT]
+        reason: "Read curated marts for model training inputs"
+    reason: "Data scientists — read raw + events + analytics marts, dedicated ML warehouse"

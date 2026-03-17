@@ -14,7 +14,7 @@ intake process — not by hand-editing Terraform modules.
 Intake (interview or audit)
     │
     ▼
-connectors.yaml + tags.yaml        ← the only files you edit per engagement
+connectors.yaml + tags.yaml + team.yaml  ← the only files you edit per engagement
     │
     ▼
 scripts/generate_tf.py             ← derives databases, warehouses, RBAC structure
@@ -45,8 +45,12 @@ ACCOUNTADMIN                ← zero active users in production
       │   └── CONN_SNOWPIPE_SNOWPLOW
       ├── TRANSFORMER       ← conceptual (transformation workloads)
       │   └── CONN_DBT_PROD
-      └── ANALYST           ← conceptual (BI + human analysts)
-          └── CONN_LOOKER
+      ├── ANALYST           ← conceptual (BI + human analysts)
+      │   └── CONN_LOOKER
+      ├── DATA_ENGINEER    ← generated from team.yaml
+      ├── DATA_ANALYST     ← generated from team.yaml
+      ├── BI_DEVELOPER     ← generated from team.yaml
+      └── DATA_SCIENTIST   ← generated from team.yaml
 
 Each CONN_{NAME}:
   └── OBJ_{DB}_WRITER or OBJ_{DB}_READER   ← privilege holders

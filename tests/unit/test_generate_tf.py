@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 import pytest
-from scripts.generate_tf import derive_databases, derive_warehouses, derive_rbac
+from scripts.generate_tf import derive_databases, derive_warehouses, derive_rbac, derive_functional_roles
 
 
 # ---------------------------------------------------------------------------
@@ -248,3 +248,84 @@ class TestDeriveRbac:
         obj_role = rbac["object_roles"]["OBJ_SHARED_DB_WRITER"]
         assert "INSERT" in obj_role["privileges"]
         assert "CREATE TABLE" in obj_role["privileges"]
+
+
+# ---------------------------------------------------------------------------
+# derive_functional_roles tests
+# ---------------------------------------------------------------------------
+
+EXAMPLE_FUNCTIONAL_ROLES = [
+    {
+        "name": "DATA_ENGINEER",
+        "warehouse": "TRANSFORM",
+        "database_access": [
+            {"db": "ANALYTICS", "schemas": ["*"], "privileges": ["SELECT", "INSERT"]},
+        ],
+        "reason": "Data engineers",
+    },
+    {
+        "name": "DATA_ANALYST",
+        "warehouse": "ANALYTICS",
+        "database_access": [
+            {"db": "ANALYTICS", "schemas": ["MARTS", "REPORTS"], "privileges": ["SELECT"]},
+        ],
+        "reason": "Analysts",
+    },
+]
+
+
+class TestDeriveFunctionalRoles:
+    def test_single_persona_single_db_schema(self):
+        roles = [
+            {
+                "name": "DATA_ANALYST",
+                "warehouse": "ANALYTICS",
+                "database_access": [
+                    {"db": "ANALYTICS", "schemas": ["MARTS"], "privileges": ["SELECT"]},
+                ],
+                "reason": "Analysts",
+            }
+        ]
+        result = derive_functional_roles(roles)
+        grants = result["functional_role_grants"]
+        assert len(grants) == 1
+        g = grants[0]
+        assert g["role"] == "DATA_ANALYST"
+        assert g["database"] == "ANALYTICS"
+        assert g["schema"] == "MARTS"
+        assert g["privilege"] == "SELECT"
+        assert g["future"] is True
+
+    def test_multiple_personas(self):
+        result = derive_functional_roles(EXAMPLE_FUNCTIONAL_ROLES)
+        role_names = [r["name"] for r in result["functional_roles"]]
+        assert "DATA_ENGINEER" in role_names
+        assert "DATA_ANALYST" in role_names
+        # Warehouse is prefixed with WH_
+        engineer = next(r for r in result["functional_roles"] if r["name"] == "DATA_ENGINEER")
+        analyst = next(r for r in result["functional_roles"] if r["name"] == "DATA_ANALYST")
+        assert engineer["warehouse"] == "WH_TRANSFORM"
+        assert analyst["warehouse"] == "WH_ANALYTICS"
+
+    def test_schema_wildcard_expansion(self):
+        result = derive_functional_roles(EXAMPLE_FUNCTIONAL_ROLES)
+        grants = result["functional_role_grants"]
+        # DATA_ENGINEER: schemas: ["*"] → schema == None
+        engineer_grants = [g for g in grants if g["role"] == "DATA_ENGINEER"]
+        assert all(g["schema"] is None for g in engineer_grants)
+        # DATA_ANALYST: named schemas → schema in ["MARTS", "REPORTS"]
+        analyst_grants = [g for g in grants if g["role"] == "DATA_ANALYST"]
+        analyst_schemas = {g["schema"] for g in analyst_grants}
+        assert "MARTS" in analyst_schemas
+        assert "REPORTS" in analyst_schemas
+
+    def test_multi_privilege_expansion(self):
+        result = derive_functional_roles(EXAMPLE_FUNCTIONAL_ROLES)
+        grants = result["functional_role_grants"]
+        # DATA_ENGINEER has [SELECT, INSERT] on one db — should produce two grant entries
+        engineer_grants = [g for g in grants if g["role"] == "DATA_ENGINEER"]
+        privileges = {g["privilege"] for g in engineer_grants}
+        assert "SELECT" in privileges
+        assert "INSERT" in privileges
+        # Two separate entries (one per privilege)
+        assert len(engineer_grants) == 2

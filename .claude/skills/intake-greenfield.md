@@ -10,6 +10,7 @@ and produces:
 
 - `intake/connectors.yaml` — one entry per integration
 - `intake/tags.yaml` — tag taxonomy
+- `intake/team.yaml` — one entry per human functional persona
 - `intake/decisions.md` — decision log with rationale
 
 ## Instructions
@@ -35,9 +36,15 @@ and produces:
      component that needs `CREATE PIPE`?
    - Section 3 (Transformation): Does dbt create schemas dynamically?
      How many environments (prod/dev)? Separate service accounts?
-   - Section 5 (Warehouses): Is WH_ANALYTICS expected to be multi-cluster?
+   - **Section 5 (Team Structure):** How many people access Snowflake
+     directly (not through a BI tool)? What are their roles and functions?
+     Do engineers need write access to the analytics layer? Should each
+     persona type have its own dedicated warehouse, or share WH_ANALYTICS?
+     Any external apps or scripts needing read-only access that should get
+     a distinct functional role for audit trail purposes?
+   - Section 6 (Warehouses): Is WH_ANALYTICS expected to be multi-cluster?
      What's the actual cost budget vs the default?
-   - Section 8 (FIREFIGHTER): Who specifically is on the activation list?
+   - Section 9 (FIREFIGHTER): Who specifically is on the activation list?
      What's the Slack/PagerDuty alert channel?
 
 5. **Review generated connectors.yaml.** After the CLI completes:

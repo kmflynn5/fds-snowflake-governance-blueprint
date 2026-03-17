@@ -138,19 +138,66 @@ the same connector role pattern as ingestion tools.*
 
 ---
 
-## Section 5 — Warehouse Topology
+## Section 5 — Team Structure
+
+*Human users hold functional roles. Service accounts hold connector roles.
+This section drives `intake/team.yaml`. See PHILOSOPHY.md.*
+
+**5.1 How many people access Snowflake directly (not through a BI tool)?**
+
+| Role / function | Count | Write access needed? |
+|----------------|-------|---------------------|
+| Data engineers | | Yes / No |
+| Analysts | | No |
+| BI developers | | No |
+| Data scientists | | No |
+| Other: ___ | | |
+
+**5.2 For each persona type, what databases and schemas do they need access to?**
+
+| Persona | Databases | Schemas | Privileges |
+|---------|-----------|---------|-----------|
+| Data engineer | RAW_*, ANALYTICS | * (all) | SELECT, INSERT, CREATE |
+| Analyst | ANALYTICS | MARTS, REPORTS | SELECT only |
+| BI developer | ANALYTICS | MARTS, REPORTS | SELECT only |
+| Data scientist | RAW_*, EVENTS, ANALYTICS | varies | SELECT only |
+
+*Common patterns:*
+- *Engineers need full write access to the analytics layer*
+- *Analysts and BI developers need read-only access to curated schemas only*
+- *Data scientists often need access to raw + event data for feature engineering*
+
+**5.3 Should each persona type have its own dedicated warehouse?**
+- [ ] Yes — separate warehouses per persona (stronger isolation, separate cost tracking)
+- [ ] No — share WH_ANALYTICS across analysts, BI developers, and data scientists
+- [ ] Mixed — describe: _______________
+
+*Note: `warehouse` in team.yaml references an existing warehouse name from
+connectors.yaml. No new warehouses are created by team.yaml alone.*
+
+**5.4 Are there any external apps or scripts that need read-only access but
+are operated by human developers?**
+- [ ] No
+- [ ] Yes — describe: _______________
+
+*If yes, consider a dedicated functional role (e.g. DATA_APP_DEVELOPER) rather
+than a shared analyst role. This preserves audit trail per persona.*
+
+**Output of this section:** `intake/team.yaml` — one entry per functional persona.
+
+---
 
 *Default pattern: one warehouse per workload (WH_INGEST, WH_TRANSFORM,
 WH_ANALYTICS). Deviations require a documented reason.*
 
-**5.1 Are there workloads that warrant a dedicated warehouse beyond the
+**6.1 Are there workloads that warrant a dedicated warehouse beyond the
 defaults?**
 *(e.g. a high-volume event pipeline that would compete with standard
 ingestion, a heavy ML workload)*
 - [ ] No — defaults are sufficient
 - [ ] Yes — describe: _______________
 
-**5.2 What are your initial warehouse sizing preferences?**
+**6.2 What are your initial warehouse sizing preferences?**
 
 | Warehouse | Initial size | Auto-suspend (minutes) |
 |-----------|-------------|----------------------|
@@ -161,7 +208,7 @@ ingestion, a heavy ML workload)*
 *If unsure: start XS for all, auto-suspend at 5 minutes. Right-size after
 observing actual usage.*
 
-**5.3 What credit budget should resource monitors enforce per warehouse per
+**6.3 What credit budget should resource monitors enforce per warehouse per
 month?**
 
 | Warehouse | Monthly credit limit | Alert at (%) | Suspend at (%) |
@@ -172,9 +219,9 @@ month?**
 
 ---
 
-## Section 6 — Database & Schema Structure
+## Section 7 — Database & Schema Structure
 
-**6.1 What is your intended database structure?**
+**7.1 What is your intended database structure?**
 
 | Database name | Purpose | Owner team |
 |--------------|---------|------------|
@@ -187,7 +234,7 @@ month?**
 default. Event data gets its own database if volume or retention requirements
 differ.*
 
-**6.2 Within RAW: one database per source or one shared RAW database with
+**7.2 Within RAW: one database per source or one shared RAW database with
 schemas per source?**
 - [ ] One database per source (e.g. RAW_FIVETRAN, RAW_AIRFLOW) — stronger
   isolation, easier connector role scoping
@@ -200,45 +247,45 @@ ingestion tools. One shared database is acceptable for simpler environments.*
 
 ---
 
-## Section 7 — Tagging
+## Section 8 — Tagging
 
 *Required at Walk stage. Collected now to inform database/schema structure
 decisions.*
 
-**7.1 How do you want to attribute Snowflake costs?**
+**8.1 How do you want to attribute Snowflake costs?**
 - [ ] By team (data engineering, analytics, product, etc.)
 - [ ] By project or workstream
 - [ ] By environment (prod, dev, staging)
 - [ ] By cost center (finance category)
 - [ ] Not yet decided
 
-**7.2 List the teams or cost centers that will appear in cost attribution:**
+**8.2 List the teams or cost centers that will appear in cost attribution:**
 
 | Tag value | Description |
 |-----------|-------------|
 | | |
 
-**7.3 Do you have any data classification requirements?**
+**8.3 Do you have any data classification requirements?**
 *(PII handling, sensitivity levels, regulatory requirements)*
 - [ ] Yes — describe: _______________
 - [ ] No
 
 ---
 
-## Section 8 — Emergency Access (FIREFIGHTER)
+## Section 9 — Emergency Access (FIREFIGHTER)
 
 *See PHILOSOPHY.md — Core Principles #4.*
 
-**8.1 Who is authorized to activate the FIREFIGHTER role in an emergency?**
+**9.1 Who is authorized to activate the FIREFIGHTER role in an emergency?**
 
 | Name | Title | Contact |
 |------|-------|---------|
 | | | |
 
-**8.2 What is the notification process when FIREFIGHTER is activated?**
+**9.2 What is the notification process when FIREFIGHTER is activated?**
 *(e.g. Slack channel, PagerDuty alert, email)*
 
-**8.3 What is the expected deactivation SLA?**
+**9.3 What is the expected deactivation SLA?**
 *(How quickly should FIREFIGHTER be unassigned after an incident is
 resolved?)*
 - [ ] Same day
@@ -247,7 +294,7 @@ resolved?)*
 
 ---
 
-## Section 9 — Decisions Log
+## Section 10 — Decisions Log
 
 *Completed by the engineer after the intake session. This becomes
 `decisions.md` in the repo.*

@@ -1,17 +1,19 @@
 """
 scripts/generate_tf.py — Config-to-Terraform codegen
 
-Reads intake/connectors.yaml + intake/tags.yaml and outputs .auto.tfvars.json
-files to terraform/ (the root Terraform directory, so they are auto-loaded).
+Reads intake/connectors.yaml + intake/tags.yaml + intake/team.yaml and outputs
+.auto.tfvars.json files to terraform/ (the root Terraform directory, so they
+are auto-loaded).
 
 Output files:
     terraform/databases.auto.tfvars.json
     terraform/warehouses.auto.tfvars.json
-    terraform/rbac.auto.tfvars.json
+    terraform/rbac.auto.tfvars.json   (includes functional_roles + functional_role_grants)
 
 Usage:
     uv run scripts/generate_tf.py
     uv run scripts/generate_tf.py --connectors custom/connectors.yaml
+    uv run scripts/generate_tf.py --team intake/team.yaml
     uv run scripts/generate_tf.py --output-dir terraform
 """
 
@@ -28,6 +30,14 @@ import yaml
 # ---------------------------------------------------------------------------
 # Derivation logic
 # ---------------------------------------------------------------------------
+
+def load_team_config(team_path: str) -> list[dict]:
+    """Load functional roles from team.yaml. Returns [] if file doesn't exist."""
+    path = Path(team_path)
+    if not path.exists():
+        return []
+    return yaml.safe_load(path.read_text()).get("functional_roles", [])
+
 
 def load_config(connectors_path: str, tags_path: str) -> tuple[list[dict], dict]:
     """Load and return (connectors list, tags dict)."""
@@ -249,7 +259,68 @@ def derive_rbac(connectors: list[dict]) -> dict:
     }
 
 
-def write_tfvars(output_dir: str, databases: dict, warehouses: dict, rbac: dict):
+def derive_functional_roles(functional_roles: list[dict]) -> dict:
+    """Derive human functional role resources from team.yaml entries.
+
+    Returns:
+        {
+            "functional_roles": [{"name": "DATA_ENGINEER", "warehouse": "WH_TRANSFORM", "reason": "..."}],
+            "functional_role_grants": [
+                {"role": "DATA_ENGINEER", "database": "ANALYTICS", "schema": None, "privilege": "SELECT", "future": True},
+                ...  # one entry per (role, db, schema, privilege) combination
+            ]
+        }
+
+    Expansion rules:
+        - schemas: ["*"]           → schema: null, future: true (database-level future grant)
+        - schemas: ["MARTS", ...]  → one entry per named schema, future: true
+        - multi-privilege list     → one entry per privilege
+        - warehouse prefix         → "TRANSFORM" becomes "WH_TRANSFORM"
+    """
+    roles_out: list[dict] = []
+    grants_out: list[dict] = []
+
+    for role in functional_roles:
+        name = role["name"]
+        warehouse = role.get("warehouse", "")
+        wh_name = f"WH_{warehouse}" if warehouse else ""
+        roles_out.append({
+            "name": name,
+            "warehouse": wh_name,
+            "reason": role.get("reason", ""),
+        })
+
+        for db_entry in role.get("database_access", []):
+            db = db_entry["db"]
+            schemas = db_entry.get("schemas", ["*"])
+            privileges = db_entry.get("privileges", ["SELECT"])
+
+            for privilege in privileges:
+                if schemas == ["*"]:
+                    grants_out.append({
+                        "role": name,
+                        "database": db,
+                        "schema": None,
+                        "privilege": privilege,
+                        "future": True,
+                    })
+                else:
+                    for schema in schemas:
+                        grants_out.append({
+                            "role": name,
+                            "database": db,
+                            "schema": schema,
+                            "privilege": privilege,
+                            "future": True,
+                        })
+
+    return {
+        "functional_roles": roles_out,
+        "functional_role_grants": grants_out,
+    }
+
+
+def write_tfvars(output_dir: str, databases: dict, warehouses: dict, rbac: dict, functional: dict):
     """Write .auto.tfvars.json files to output_dir."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -260,7 +331,8 @@ def write_tfvars(output_dir: str, databases: dict, warehouses: dict, rbac: dict)
 
     db_file.write_text(json.dumps({"databases": databases}, indent=2) + "\n")
     wh_file.write_text(json.dumps({"warehouses": warehouses}, indent=2) + "\n")
-    rbac_file.write_text(json.dumps(rbac, indent=2) + "\n")
+    rbac_payload = {**rbac, **functional}
+    rbac_file.write_text(json.dumps(rbac_payload, indent=2) + "\n")
 
     return db_file, wh_file, rbac_file
 
@@ -283,31 +355,44 @@ def write_tfvars(output_dir: str, databases: dict, warehouses: dict, rbac: dict)
     help="Path to tags.yaml",
 )
 @click.option(
+    "--team",
+    default="intake/team.yaml",
+    show_default=True,
+    help="Path to team.yaml (optional — graceful if missing)",
+)
+@click.option(
     "--output-dir",
     default="terraform",
     show_default=True,
     help="Output directory for .auto.tfvars.json files",
 )
 @click.option("--dry-run", is_flag=True, help="Print derived config without writing files")
-def main(connectors: str, tags: str, output_dir: str, dry_run: bool):
+def main(connectors: str, tags: str, team: str, output_dir: str, dry_run: bool):
     """Generate Terraform .auto.tfvars.json from intake YAML config.
 
-    Reads connectors.yaml and tags.yaml, derives databases, warehouses, and RBAC
-    structure, and writes auto.tfvars.json files consumed by Terraform modules.
+    Reads connectors.yaml, tags.yaml, and (optionally) team.yaml, derives
+    databases, warehouses, and RBAC structure, and writes auto.tfvars.json
+    files consumed by Terraform modules.
     """
     click.echo(f"Loading config from {connectors} + {tags}")
     connector_list, tags_config = load_config(connectors, tags)
     click.echo(f"  {len(connector_list)} connector(s) loaded")
 
+    team_roles = load_team_config(team)
+    if team_roles:
+        click.echo(f"  {len(team_roles)} functional role(s) loaded from {team}")
+
     databases = derive_databases(connector_list)
     warehouses = derive_warehouses(connector_list)
     rbac = derive_rbac(connector_list)
+    functional = derive_functional_roles(team_roles)
 
     click.echo(f"\nDerived:")
     click.echo(f"  {len(databases)} database(s): {', '.join(databases.keys())}")
     click.echo(f"  {len(warehouses)} warehouse(s): {', '.join(f'WH_{w}' for w in warehouses.keys())}")
     click.echo(f"  {len(rbac['connector_roles'])} connector role(s)")
     click.echo(f"  {len(rbac['object_roles'])} object role(s)")
+    click.echo(f"  {len(functional['functional_roles'])} human functional role(s)")
 
     if dry_run:
         click.echo("\n--- DRY RUN --- databases ---")
@@ -315,10 +400,10 @@ def main(connectors: str, tags: str, output_dir: str, dry_run: bool):
         click.echo("\n--- DRY RUN --- warehouses ---")
         click.echo(json.dumps({"warehouses": warehouses}, indent=2))
         click.echo("\n--- DRY RUN --- rbac ---")
-        click.echo(json.dumps(rbac, indent=2))
+        click.echo(json.dumps({**rbac, **functional}, indent=2))
         return
 
-    db_file, wh_file, rbac_file = write_tfvars(output_dir, databases, warehouses, rbac)
+    db_file, wh_file, rbac_file = write_tfvars(output_dir, databases, warehouses, rbac, functional)
 
     click.echo(f"\nWritten:")
     click.echo(f"  {db_file}")
