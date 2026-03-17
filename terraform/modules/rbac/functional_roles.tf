@@ -1,34 +1,15 @@
 # terraform/modules/rbac/functional_roles.tf
 #
-# Static functional roles: LOADER, TRANSFORMER, ANALYST, FIREFIGHTER, AUDITOR.
+# Static operational roles: FIREFIGHTER, AUDITOR.
+# Dynamic human functional roles: generated from intake/team.yaml via for_each.
 #
-# IMPORTANT — functional roles are conceptual groupings, not operational assignments.
-# Service accounts are NEVER assigned to functional roles directly.
-# The operational layer is the connector role (CONN_{NAME}).
-#
-# See PHILOSOPHY.md §The Connector Role Philosophy:
-#   "Functional roles (LOADER, TRANSFORMER, ANALYST) remain in the model as
-#    conceptual groupings — useful for auditing, documentation, and communicating
-#    intent. They are not operational assignments."
-
-# ---------------------------------------------------------------------------
-# Functional roles (conceptual layer)
-# ---------------------------------------------------------------------------
-
-resource "snowflake_account_role" "loader" {
-  name    = "LOADER"
-  comment = "Conceptual role — ingestion workload grouping. See PHILOSOPHY.md §Connector Role Philosophy. Do not assign users or service accounts directly."
-}
-
-resource "snowflake_account_role" "transformer" {
-  name    = "TRANSFORMER"
-  comment = "Conceptual role — transformation workload grouping. See PHILOSOPHY.md §Connector Role Philosophy. Do not assign users or service accounts directly."
-}
-
-resource "snowflake_account_role" "analyst" {
-  name    = "ANALYST"
-  comment = "Conceptual role — analyst and BI workload grouping. See PHILOSOPHY.md §Connector Role Philosophy. Human users assigned here for read-only access."
-}
+# NOTE — LOADER, TRANSFORMER, ANALYST are conceptual groupings documented in
+# PHILOSOPHY.md §The Connector Role Philosophy. They are intentionally NOT
+# created as Snowflake roles — the concepts are expressed through naming
+# conventions (CONN_ prefix = loader layer, OBJ_ prefix = object layer,
+# human functional role names = analyst/engineer layer) and role comments.
+# Role-layer tagging (a `role_layer` tag on each role) is planned for the
+# Observability expansion — see PHILOSOPHY.md §Observability Expansion.
 
 # ---------------------------------------------------------------------------
 # FIREFIGHTER — dormant emergency access role
@@ -93,21 +74,6 @@ resource "snowflake_grant_privileges_to_account_role" "auditor_account_usage" {
 # visible in the standard Snowflake role hierarchy view.
 # ---------------------------------------------------------------------------
 
-resource "snowflake_grant_account_role" "loader_to_sysadmin" {
-  role_name        = snowflake_account_role.loader.name
-  parent_role_name = "SYSADMIN"
-}
-
-resource "snowflake_grant_account_role" "transformer_to_sysadmin" {
-  role_name        = snowflake_account_role.transformer.name
-  parent_role_name = "SYSADMIN"
-}
-
-resource "snowflake_grant_account_role" "analyst_to_sysadmin" {
-  role_name        = snowflake_account_role.analyst.name
-  parent_role_name = "SYSADMIN"
-}
-
 # ---------------------------------------------------------------------------
 # Generated human functional roles (from intake/team.yaml)
 #
@@ -145,23 +111,55 @@ resource "snowflake_grant_privileges_to_account_role" "human_functional_warehous
 
 locals {
   # Unique (role, database) pairs — for database USAGE grants
+  # distinct() deduplicates before mapping to avoid key collisions when a role
+  # has multiple schemas or privileges in the same database.
   functional_db_usage = {
-    for g in var.functional_role_grants :
-    "${g.role}__${g.database}" => { role = g.role, database = g.database }
+    for pair in distinct([
+      for g in var.functional_role_grants :
+      { role = g.role, database = g.database }
+    ]) :
+    "${pair.role}__${pair.database}" => pair
   }
 
-  # Database-level future grants (schema == null → schemas: ["*"])
+  # Database-level future TABLE grants (schema == null → schemas: ["*"])
+  # Filtered to table-level privileges only (SELECT, INSERT).
+  # CREATE TABLE and CREATE SCHEMA require separate grant types — see below.
   functional_db_future = {
     for g in var.functional_role_grants :
     "${g.role}__${g.database}__${g.privilege}" => g
-    if g.schema == null
+    if g.schema == null && contains(["SELECT", "INSERT"], g.privilege)
+  }
+
+  # Unique (role, database) pairs where the role needs CREATE TABLE on future schemas
+  functional_db_future_create_table = {
+    for pair in distinct([
+      for g in var.functional_role_grants :
+      { role = g.role, database = g.database }
+      if g.schema == null && g.privilege == "CREATE TABLE"
+    ]) :
+    "${pair.role}__${pair.database}" => pair
+  }
+
+  # Unique (role, database) pairs where the role needs CREATE SCHEMA on the database
+  functional_db_create_schema = {
+    for pair in distinct([
+      for g in var.functional_role_grants :
+      { role = g.role, database = g.database }
+      if g.schema == null && g.privilege == "CREATE SCHEMA"
+    ]) :
+    "${pair.role}__${pair.database}" => pair
   }
 
   # Database-level future schema USAGE (so new schemas are visible after wildcard grants)
+  # distinct() deduplicates before mapping to avoid key collisions when a role
+  # has multiple wildcard privileges in the same database.
   functional_wildcard_db_pairs = {
-    for g in var.functional_role_grants :
-    "${g.role}__${g.database}" => { role = g.role, database = g.database }
-    if g.schema == null
+    for pair in distinct([
+      for g in var.functional_role_grants :
+      { role = g.role, database = g.database }
+      if g.schema == null
+    ]) :
+    "${pair.role}__${pair.database}" => pair
   }
 
   # Unique (role, database, schema) pairs — for schema USAGE grants
@@ -202,6 +200,25 @@ resource "snowflake_grant_privileges_to_account_role" "human_functional_db_futur
       object_type_plural = "TABLES"
       in_database        = each.value.database
     }
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "human_functional_db_future_create_table" {
+  for_each          = local.functional_db_future_create_table
+  account_role_name = snowflake_account_role.human_functional[each.value.role].name
+  privileges        = ["CREATE TABLE"]
+  on_schema {
+    future_schemas_in_database = each.value.database
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "human_functional_db_create_schema" {
+  for_each          = local.functional_db_create_schema
+  account_role_name = snowflake_account_role.human_functional[each.value.role].name
+  privileges        = ["CREATE SCHEMA"]
+  on_account_object {
+    object_type = "DATABASE"
+    object_name = each.value.database
   }
 }
 

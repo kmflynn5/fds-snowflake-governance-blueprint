@@ -409,6 +409,22 @@ def main(connectors: str, tags: str, team: str, output_dir: str, dry_run: bool):
     click.echo(f"  {db_file}")
     click.echo(f"  {wh_file}")
     click.echo(f"  {rbac_file}")
+
+    # Scope-down reminders
+    reminders = []
+    for role in team_roles:
+        for db_entry in role.get("database_access", []):
+            scope_to = db_entry.get("scope_to")
+            if scope_to:
+                reminders.append((role["name"], db_entry["db"], scope_to))
+    if reminders:
+        click.echo(click.style(
+            "\nSCOPE-DOWN REMINDERS (update team.yaml when these schemas exist):",
+            fg="yellow", bold=True,
+        ))
+        for role_name, db, scope in reminders:
+            click.echo(click.style(f"  {role_name}.{db} → {scope}", fg="yellow"))
+
     click.echo("\nNext: cd terraform && terraform init && terraform plan")
 
 

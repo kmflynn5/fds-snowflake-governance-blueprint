@@ -199,5 +199,5 @@ class TestSurveysStructure:
                 assert len(sql.strip()) > 0, f"{section}.{name} is empty"
 
     def test_section_count(self):
-        # brownfield_intake.md has 8 sections (1.1–1.8)
-        assert len(SURVEYS) == 8
+        # brownfield_intake.md has 8 sections (1.1–1.8); 1_3_human_role_assignments is an additional 1.3-level survey
+        assert len(SURVEYS) == 9

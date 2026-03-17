@@ -74,6 +74,21 @@ SURVEYS = {
             """).strip(),
         },
     },
+    "1_3_human_role_assignments": {
+        "description": "Human user role assignments — which roles do non-service users hold",
+        "queries": {
+            "human_role_assignments": textwrap.dedent("""
+                SELECT u.name AS user_name, u.login_name, u.type AS user_type,
+                       g.role AS granted_role, u.last_success_login
+                FROM snowflake.account_usage.users u
+                LEFT JOIN snowflake.account_usage.grants_to_users g
+                    ON u.name = g.grantee_name AND g.deleted_on IS NULL
+                WHERE u.deleted_on IS NULL
+                  AND u.type NOT IN ('SERVICE', 'LEGACY_SERVICE')
+                ORDER BY u.last_success_login DESC NULLS LAST
+            """).strip(),
+        },
+    },
     "1_4_warehouse_inventory": {
         "description": "Warehouse inventory — all warehouses and 30-day usage",
         "queries": {
@@ -411,6 +426,22 @@ def report(survey_dir: str):
             "risk": "Direct grants bypass the role hierarchy entirely (PHILOSOPHY.md §2)",
             "remediation": "Migrate all direct grants to object roles; revoke direct grants",
         })
+
+    # 1.3 Human role assignments — flag humans holding object roles directly
+    human_assignments = data.get("1_3_human_role_assignments", {}).get("human_role_assignments", [])
+    if isinstance(human_assignments, list):
+        obj_role_holders = [
+            r for r in human_assignments
+            if isinstance(r.get("granted_role"), str) and r["granted_role"].startswith("OBJ_")
+        ]
+        if obj_role_holders:
+            users_with_obj = sorted({r.get("user_name", "") for r in obj_role_holders})
+            standard.append({
+                "finding": "Humans assigned directly to object roles — should hold only functional roles",
+                "evidence": f"{len(obj_role_holders)} assignment(s) across {len(users_with_obj)} user(s): {', '.join(users_with_obj[:5])}",
+                "priority": "medium",
+                "remediation": "Assign humans to functional roles only; object roles should be held by connector/functional roles",
+            })
 
     # 1.4 Warehouse inventory
     warehouses = data.get("1_4_warehouse_inventory", {}).get("warehouses", [])

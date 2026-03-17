@@ -35,22 +35,24 @@ functional_roles:
     warehouse: ANALYTICS
     database_access:
       - db: ANALYTICS
-        schemas: ["MARTS", "REPORTS"]
+        schemas: ["*"]           # wildcard until schemas exist
+        scope_to: ["MARTS", "REPORTS"]  # intended scope — update schemas when ready
         privileges: [SELECT]
         reason: "Read-only access to curated analytics layer"
-    reason: "Analysts — read-only on MARTS and REPORTS schemas in ANALYTICS"
+    reason: "Analysts — read-only on ANALYTICS (wildcard; scope to named schemas once created)"
 
   - name: BI_DEVELOPER
     warehouse: ANALYTICS
     database_access:
       - db: ANALYTICS
-        schemas: ["MARTS", "REPORTS"]
+        schemas: ["*"]           # wildcard until schemas exist
+        scope_to: ["MARTS", "REPORTS"]  # intended scope — update schemas when ready
         privileges: [SELECT]
         reason: "Same read scope as analysts — separate role for audit trail and future divergence"
     reason: "BI tool developers — read ANALYTICS layer, separate role from DATA_ANALYST"
 
   - name: DATA_SCIENTIST
-    warehouse: ML
+    warehouse: ANALYTICS  # use TRANSFORM if a dedicated ML warehouse is added to connectors.yaml
     database_access:
       - db: RAW_FIVETRAN
         schemas: ["*"]
@@ -61,7 +63,8 @@ functional_roles:
         privileges: [SELECT]
         reason: "Read event stream for behavioral modeling"
       - db: ANALYTICS
-        schemas: ["MARTS"]
+        schemas: ["*"]           # wildcard until schemas exist
+        scope_to: ["MARTS"]      # intended scope — update schemas when ready
         privileges: [SELECT]
         reason: "Read curated marts for model training inputs"
     reason: "Data scientists — read raw + events + analytics marts, dedicated ML warehouse"

@@ -29,6 +29,11 @@ output "object_role_names" {
 }
 
 output "functional_role_names" {
-  description = "Static functional role names"
+  description = "Human functional role names (from intake/team.yaml)"
   value       = module.rbac.functional_role_names
+}
+
+output "system_role_names" {
+  description = "System-managed operational roles (FIREFIGHTER, AUDITOR)"
+  value       = module.rbac.system_role_names
 }

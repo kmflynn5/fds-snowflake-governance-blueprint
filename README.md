@@ -36,26 +36,37 @@ Snowflake resources
 ## RBAC Architecture
 
 ```
-ACCOUNTADMIN                ← zero active users in production
-  └── SYSADMIN              ← infrastructure setup only
-      ├── FIREFIGHTER       ← dormant, zero assigned users, emergency only
-      ├── LOADER            ← conceptual (ingestion workloads)
-      │   └── CONN_FIVETRAN
-      │   └── CONN_AIRFLOW
-      │   └── CONN_SNOWPIPE_SNOWPLOW
-      ├── TRANSFORMER       ← conceptual (transformation workloads)
-      │   └── CONN_DBT_PROD
-      ├── ANALYST           ← conceptual (BI + human analysts)
-      │   └── CONN_LOOKER
-      ├── DATA_ENGINEER    ← generated from team.yaml
-      ├── DATA_ANALYST     ← generated from team.yaml
-      ├── BI_DEVELOPER     ← generated from team.yaml
-      └── DATA_SCIENTIST   ← generated from team.yaml
+ACCOUNTADMIN                      ← zero active users in production
+  └── SYSADMIN                    ← infrastructure setup only
+      ├── FIREFIGHTER             ← dormant, zero assigned users, emergency only
+      ├── AUDITOR                 ← eval suite read access (account_usage only)
+      │
+      │   -- loader layer --
+      ├── CONN_FIVETRAN
+      ├── CONN_AIRFLOW
+      ├── CONN_SNOWPIPE_SNOWPLOW
+      │
+      │   -- transformer layer --
+      ├── CONN_DBT_PROD
+      │
+      │   -- analyst layer --
+      ├── CONN_LOOKER
+      │
+      │   -- human functional (generated from team.yaml) --
+      ├── DATA_ENGINEER
+      ├── DATA_ANALYST
+      ├── BI_DEVELOPER
+      └── DATA_SCIENTIST
 
 Each CONN_{NAME}:
   └── OBJ_{DB}_WRITER or OBJ_{DB}_READER   ← privilege holders
   └── WH_{WORKLOAD} USAGE
 ```
+
+LOADER, TRANSFORMER, and ANALYST are conceptual layer names used in documentation —
+not actual Snowflake roles. Layer membership is expressed through naming conventions
+(`CONN_` prefix, human functional role names) and role comments. A `role_layer` tag
+is planned for the Observability expansion to make this queryable.
 
 Object roles hold privileges. Connector roles hold object roles.
 Human users get functional roles. Service accounts get connector roles. Never crossed.
