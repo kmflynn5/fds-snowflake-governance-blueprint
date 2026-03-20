@@ -352,6 +352,7 @@ def _section_transformation(brownfield_context: dict | None) -> list[dict]:
         connectors.append({
             "name": name,
             "type": "transformer",
+            "tool": tool,
             "source_dbs": source_dbs,
             "target_db": target_db,
             "target_schemas": ["*"],
@@ -435,9 +436,9 @@ def _section_warehouses(brownfield_context: dict | None = None) -> dict:
     defaults = [("INGEST", "XSMALL", 100), ("TRANSFORM", "XSMALL", 500), ("ANALYTICS", "XSMALL", 150)]
     for wh_name, default_size, default_budget in defaults:
         click.echo(f"\n  WH_{wh_name}:")
-        size = _prompt(f"    Size", type=sizes, default=default_size)
-        auto_suspend = _prompt(f"    Auto-suspend (minutes)", type=int, default=5)
-        budget = _prompt(f"    Monthly credit budget", type=int, default=default_budget)
+        size = _prompt("    Size", type=sizes, default=default_size)
+        auto_suspend = _prompt("    Auto-suspend (minutes)", type=int, default=5)
+        budget = _prompt("    Monthly credit budget", type=int, default=default_budget)
         if wh_name == "TRANSFORM":
             _note("dbt on SMALL typically uses 50-150 credits/day depending on model count.")
         warehouses[wh_name] = {
