@@ -39,7 +39,7 @@ override.tf.json
 Thumbs.db
 
 # Secrets
-.env
+*.env
 *.pem
 *.key
 *.p8
