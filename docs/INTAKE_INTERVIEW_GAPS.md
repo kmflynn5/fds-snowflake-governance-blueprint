@@ -141,11 +141,10 @@ This gives the client one moment to catch errors without requiring a full restar
 
 ## Low — Nice to Have
 
-### L1: The Claude Code tip references non-existent skills
+### L1: The Claude Code tip references non-existent skills — **CLOSED**
 
 **Location:** `cli()`, opening message
-**Description:** `Tip: run /intake-greenfield or /intake-review in Claude Code for a guided session.` — these skills do not exist in the current `.claude/` config. Clients running this from the CLI will see a confusing tip.
-**Expected behaviour:** Either create the skills, or remove the tip until they exist.
+**Resolution:** Skills exist at `.claude/skills/intake-greenfield.md` and `.claude/skills/intake-review.md`. Tip is valid.
 
 ---
 
@@ -165,10 +164,10 @@ This gives the client one moment to catch errors without requiring a full restar
 
 ---
 
-### L4: Connector name uppercasing is inconsistent
+### L4: Connector name uppercasing is inconsistent — **CLOSED**
 
 **Location:** `_section_ingestion()`, `_section_transformation()`, `_section_consumption()`
-**Description:** Ingestion and consumption call `.upper()` on the name input. Transformation does not — `name = _prompt(...).upper()` is present but the `connectors.append({"name": name, ...})` uses `name` directly without the `CONN_` prefix (the prefix is only shown in the preview `CONN_{c['name']}`). Verify this is consistent in the YAML output and that `generate_tf.py` handles the prefix correctly.
+**Resolution:** All three sections now call `_normalize_identifier()` which uppercases and validates. The `CONN_` prefix is applied by `generate_tf.py` at codegen time — YAML stores bare names. Behavior is correct and consistent.
 
 ---
 

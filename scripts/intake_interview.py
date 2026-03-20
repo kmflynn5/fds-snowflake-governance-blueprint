@@ -11,16 +11,20 @@ Usage:
     uv run scripts/intake_interview.py --greenfield
     uv run scripts/intake_interview.py --brownfield
     uv run scripts/intake_interview.py --greenfield --output-dir custom/
+    uv run scripts/intake_interview.py --greenfield --dry-run
 
 Outputs:
     intake/connectors.yaml
     intake/tags.yaml
+    intake/team.yaml
     intake/decisions.md
 """
 
 from __future__ import annotations
 
+import datetime
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -55,6 +59,110 @@ def _note(text: str):
     click.echo(click.style(f"  NOTE: {text}", fg="yellow"))
 
 
+def _normalize_identifier(label: str, raw: str) -> str:
+    """Normalize to a Snowflake-safe uppercase identifier. Re-prompts until valid."""
+    name = raw.strip().upper().replace(" ", "_").replace("-", "_")
+    while not re.match(r'^[A-Z][A-Z0-9_]*$', name):
+        click.echo(click.style(
+            f"  '{name}' is not a valid Snowflake identifier. Use letters, digits, underscores only.",
+            fg="red",
+        ))
+        raw = _prompt(label)
+        name = raw.strip().upper().replace(" ", "_").replace("-", "_")
+    return name
+
+
+def _validate_tag_values(prompt_label: str, raw: str, min_count: int = 2) -> list[str]:
+    """Validate tag values, re-prompting until valid. Returns a clean list."""
+    while True:
+        values = [v.strip().lower() for v in raw.split(",") if v.strip()]
+        errors: list[str] = []
+        for v in values:
+            if len(v) == 1:
+                errors.append(f"  '{v}' is a single character — check your input")
+        if len(values) < min_count:
+            errors.append(f"  at least {min_count} values required, got {len(values)}")
+        if not errors:
+            return values
+        for e in errors:
+            click.echo(click.style(e, fg="red"))
+        raw = _prompt(prompt_label)
+
+
+# ---------------------------------------------------------------------------
+# State file helpers
+# ---------------------------------------------------------------------------
+
+def _save_state(state: dict, output_dir: Path):
+    state_path = output_dir / ".interview_state.json"
+    state_path.write_text(json.dumps(state, indent=2, default=str))
+
+
+def _load_state(output_dir: Path) -> dict | None:
+    state_path = output_dir / ".interview_state.json"
+    if not state_path.exists():
+        return None
+    try:
+        return json.loads(state_path.read_text())
+    except Exception:
+        return None
+
+
+def _delete_state(output_dir: Path):
+    state_path = output_dir / ".interview_state.json"
+    if state_path.exists():
+        state_path.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Brownfield connector pattern detection
+# ---------------------------------------------------------------------------
+
+_CONNECTOR_PATTERNS: dict[str, dict[str, str]] = {
+    "ingestion": {
+        "FIVETRAN": "etl",
+        "AIRBYTE": "etl",
+        "STITCH": "etl",
+        "AIRFLOW": "orchestrator",
+        "DAGSTER": "orchestrator",
+        "MELTANO": "etl",
+    },
+    "transformation": {
+        "DBT": "transformer",
+        "MATILLION": "transformer",
+    },
+    "consumption": {
+        "LOOKER": "bi_tool",
+        "SIGMA": "bi_tool",
+        "TABLEAU": "bi_tool",
+        "POWERBI": "bi_tool",
+        "METABASE": "bi_tool",
+    },
+}
+
+_SIZE_MAP = {
+    "X-Small": "XSMALL",
+    "Small": "SMALL",
+    "Medium": "MEDIUM",
+    "Large": "LARGE",
+    "X-Large": "XLARGE",
+}
+
+
+def _detect_connectors(service_accounts: list[dict], category: str) -> list[dict]:
+    """Match user/role names from service account patterns against known connector patterns."""
+    patterns = _CONNECTOR_PATTERNS.get(category, {})
+    detected = []
+    seen = set()
+    for entry in service_accounts:
+        name = entry.get("user_name", "") or entry.get("role_name", "")
+        for keyword, conn_type in patterns.items():
+            if keyword in name.upper() and keyword not in seen:
+                seen.add(keyword)
+                detected.append({"keyword": keyword, "type": conn_type, "source_name": name})
+    return detected
+
+
 # ---------------------------------------------------------------------------
 # Interview sections
 # ---------------------------------------------------------------------------
@@ -62,6 +170,28 @@ def _note(text: str):
 def _section_context(brownfield_context: dict | None) -> dict:
     """Section 1: Context — purpose, team size, maturity target."""
     _section_header("Section 1 — Context")
+
+    # Brownfield audit summary
+    if brownfield_context:
+        _section_header("Audit Summary (from survey data)")
+        warehouses = brownfield_context.get("1_4_warehouse_inventory", {}).get("warehouses", [])
+        users = brownfield_context.get("1_2_user_inventory", {}).get("users", [])
+        direct_grants = brownfield_context.get("1_3_direct_grants", {}).get("direct_grants", [])
+        service_accounts = brownfield_context.get("1_8_service_account_patterns", {}).get("user_query_volume", [])
+        tag_refs = brownfield_context.get("1_6_tag_coverage", {}).get("tag_references", [])
+        monitors = brownfield_context.get("1_5_resource_monitor_coverage", {}).get("warehouses", [])
+        roles = brownfield_context.get("1_1_role_inventory", {}).get("roles", [])
+        accountadmin_count = sum(
+            1 for r in roles if r.get("name") == "ACCOUNTADMIN" and r.get("assigned_to_users", 0) > 0
+        )
+        click.echo(f"  Warehouses found     : {len(warehouses)}")
+        click.echo(f"  Users found          : {len(users)}")
+        click.echo(f"  ACCOUNTADMIN holders : {accountadmin_count}")
+        click.echo(f"  Direct grants        : {len(direct_grants)}")
+        click.echo(f"  Service accounts     : {len(service_accounts)}")
+        click.echo(f"  Tag references       : {len(tag_refs)}")
+        click.echo(f"  Resource monitors    : {len(monitors)}")
+        click.echo("")
 
     purpose = _prompt(
         "Primary purpose of this Snowflake environment",
@@ -102,13 +232,26 @@ def _section_ingestion(brownfield_context: dict | None) -> list[dict]:
     _section_header("Section 2 — Ingestion (LOADER layer)")
     _note("Each tool gets its own connector role. See PHILOSOPHY.md §Connector Role Philosophy.")
 
+    # Brownfield: detect connectors from service account patterns
+    if brownfield_context:
+        service_accounts = brownfield_context.get("1_8_service_account_patterns", {}).get("user_query_volume", [])
+        detected = _detect_connectors(service_accounts, "ingestion")
+        if detected:
+            click.echo(click.style(
+                f"  Detected {len(detected)} possible ingestion connector(s) from audit data:", fg="cyan"
+            ))
+            for d in detected:
+                click.echo(f"    {d['keyword']} ({d['type']}) — found as '{d['source_name']}'")
+
     connectors = []
     while True:
         click.echo("")
         if not _confirm("Add an ingestion tool?", default=True if not connectors else False):
             break
 
-        name = _prompt("  Integration name (uppercase, e.g. FIVETRAN)").upper()
+        raw_name = _prompt("  Integration name (uppercase, e.g. FIVETRAN)")
+        name = _normalize_identifier("  Integration name (uppercase, e.g. FIVETRAN)", raw_name)
+
         itype = _prompt(
             "  Type",
             type=click.Choice(["etl", "orchestrator", "event_stream", "custom"], case_sensitive=False),
@@ -140,7 +283,7 @@ def _section_ingestion(brownfield_context: dict | None) -> list[dict]:
                 extra_grants = ["CREATE PIPE", "MONITOR"]
 
         warehouse = _prompt("  Warehouse (INGEST / TRANSFORM / ANALYTICS or custom)").upper()
-        reason = _prompt("  One-sentence reason for this connector")
+        reason = _prompt("  One-sentence reason (optional, press Enter to skip)", default="")
         vendor_managed = _confirm("  Vendor-managed credential (e.g. Fivetran, Airbyte)?", default=False)
 
         entry: dict = {
@@ -166,43 +309,58 @@ def _section_transformation(brownfield_context: dict | None) -> list[dict]:
     """Section 3: Transformation — dbt / other."""
     _section_header("Section 3 — Transformation (TRANSFORMER layer)")
 
+    # Brownfield: detect transformation connectors
+    if brownfield_context:
+        service_accounts = brownfield_context.get("1_8_service_account_patterns", {}).get("user_query_volume", [])
+        detected = _detect_connectors(service_accounts, "transformation")
+        if detected:
+            click.echo(click.style(
+                f"  Detected {len(detected)} possible transformation connector(s) from audit data:", fg="cyan"
+            ))
+            for d in detected:
+                click.echo(f"    {d['keyword']} ({d['type']}) — found as '{d['source_name']}'")
+
     connectors = []
-    if not _confirm("Add a transformation tool?", default=True):
-        return connectors
+    while True:
+        click.echo("")
+        prompt_text = "Add a transformation tool?" if not connectors else "Add another transformation tool?"
+        if not _confirm(prompt_text, default=True if not connectors else False):
+            break
 
-    tool = _prompt(
-        "Transformation tool",
-        type=click.Choice(["dbt_core", "dbt_cloud", "custom_python_sql", "spark", "other"], case_sensitive=False),
-    )
-    name = _prompt("Connector name (uppercase, e.g. DBT_PROD)").upper()
+        tool = _prompt(
+            "Transformation tool",
+            type=click.Choice(["dbt_core", "dbt_cloud", "custom_python_sql", "spark", "other"], case_sensitive=False),
+        )
+        raw_name = _prompt("Connector name (uppercase, e.g. DBT_PROD)")
+        name = _normalize_identifier("Connector name (uppercase, e.g. DBT_PROD)", raw_name)
 
-    source_input = _prompt("Source databases (comma-separated, e.g. RAW_FIVETRAN,RAW_AIRFLOW)")
-    source_dbs = [s.strip().upper() for s in source_input.split(",")]
+        source_input = _prompt("Source databases (comma-separated, e.g. RAW_FIVETRAN,RAW_AIRFLOW)")
+        source_dbs = [s.strip().upper() for s in source_input.split(",")]
 
-    target_db = _prompt("Target database (e.g. ANALYTICS)").upper()
+        target_db = _prompt("Target database (e.g. ANALYTICS)").upper()
 
-    dynamic_schemas = _confirm("Does it create schemas dynamically?", default=True)
-    _note("If yes, CREATE SCHEMA privilege is required on the target database.")
+        dynamic_schemas = _confirm("Does it create schemas dynamically?", default=True)
+        _note("If yes, CREATE SCHEMA privilege is required on the target database.")
 
-    privileges = ["SELECT", "INSERT", "CREATE TABLE"]
-    if dynamic_schemas:
-        privileges.append("CREATE SCHEMA")
+        privileges = ["SELECT", "INSERT", "CREATE TABLE"]
+        if dynamic_schemas:
+            privileges.append("CREATE SCHEMA")
 
-    warehouse = _prompt("Warehouse (typically TRANSFORM)").upper()
-    reason = _prompt("One-sentence reason for this connector")
+        warehouse = _prompt("Warehouse (typically TRANSFORM)").upper()
+        reason = _prompt("One-sentence reason (optional, press Enter to skip)", default="")
 
-    connectors.append({
-        "name": name,
-        "type": "transformer",
-        "source_dbs": source_dbs,
-        "target_db": target_db,
-        "target_schemas": ["*"],
-        "privileges": privileges,
-        "warehouse": warehouse,
-        "reason": reason,
-        "vendor_managed": False,
-    })
-    click.echo(click.style(f"  -> CONN_{name} added", fg="green"))
+        connectors.append({
+            "name": name,
+            "type": "transformer",
+            "source_dbs": source_dbs,
+            "target_db": target_db,
+            "target_schemas": ["*"],
+            "privileges": privileges,
+            "warehouse": warehouse,
+            "reason": reason,
+            "vendor_managed": False,
+        })
+        click.echo(click.style(f"  -> CONN_{name} added", fg="green"))
 
     return connectors
 
@@ -211,13 +369,25 @@ def _section_consumption(brownfield_context: dict | None) -> list[dict]:
     """Section 4: Consumption — BI tools / analyst access."""
     _section_header("Section 4 — Consumption (ANALYST layer)")
 
+    # Brownfield: detect consumption connectors
+    if brownfield_context:
+        service_accounts = brownfield_context.get("1_8_service_account_patterns", {}).get("user_query_volume", [])
+        detected = _detect_connectors(service_accounts, "consumption")
+        if detected:
+            click.echo(click.style(
+                f"  Detected {len(detected)} possible consumption connector(s) from audit data:", fg="cyan"
+            ))
+            for d in detected:
+                click.echo(f"    {d['keyword']} ({d['type']}) — found as '{d['source_name']}'")
+
     connectors = []
     while True:
         click.echo("")
         if not _confirm("Add a BI tool or consumer?", default=True if not connectors else False):
             break
 
-        name = _prompt("  Tool name (uppercase, e.g. LOOKER)").upper()
+        raw_name = _prompt("  Tool name (uppercase, e.g. LOOKER)")
+        name = _normalize_identifier("  Tool name (uppercase, e.g. LOOKER)", raw_name)
         source_db = _prompt("  Source database (read-only, e.g. MARTS)").upper()
 
         all_schemas = _confirm("  Access all schemas?", default=True)
@@ -227,7 +397,7 @@ def _section_consumption(brownfield_context: dict | None) -> list[dict]:
         ]
 
         warehouse = _prompt("  Warehouse (typically ANALYTICS)").upper()
-        reason = _prompt("  One-sentence reason")
+        reason = _prompt("  One-sentence reason (optional, press Enter to skip)", default="")
         vendor_managed = _confirm("  Vendor-managed credential?", default=True)
 
         connectors.append({
@@ -245,20 +415,31 @@ def _section_consumption(brownfield_context: dict | None) -> list[dict]:
     return connectors
 
 
-def _section_warehouses() -> dict:
+def _section_warehouses(brownfield_context: dict | None = None) -> dict:
     """Section 5: Warehouse topology — sizes and budgets."""
     _section_header("Section 5 — Warehouse Topology")
     _note("Default: WH_INGEST, WH_TRANSFORM, WH_ANALYTICS. One per workload.")
 
+    # Brownfield: show existing warehouses
+    if brownfield_context:
+        existing = brownfield_context.get("1_4_warehouse_inventory", {}).get("warehouses", [])
+        if existing:
+            click.echo(click.style(f"\n  Found {len(existing)} existing warehouse(s) in your environment:", fg="cyan"))
+            for wh in existing:
+                size = _SIZE_MAP.get(wh.get("size", ""), wh.get("size", "?"))
+                click.echo(f"    {wh.get('name', '?')} ({size})")
+
     sizes = click.Choice(["XSMALL", "SMALL", "MEDIUM", "LARGE"], case_sensitive=False)
     warehouses: dict[str, dict] = {}
 
-    defaults = [("INGEST", "XSMALL", 100), ("TRANSFORM", "XSMALL", 200), ("ANALYTICS", "XSMALL", 150)]
+    defaults = [("INGEST", "XSMALL", 100), ("TRANSFORM", "XSMALL", 500), ("ANALYTICS", "XSMALL", 150)]
     for wh_name, default_size, default_budget in defaults:
         click.echo(f"\n  WH_{wh_name}:")
         size = _prompt(f"    Size", type=sizes, default=default_size)
         auto_suspend = _prompt(f"    Auto-suspend (minutes)", type=int, default=5)
         budget = _prompt(f"    Monthly credit budget", type=int, default=default_budget)
+        if wh_name == "TRANSFORM":
+            _note("dbt on SMALL typically uses 50-150 credits/day depending on model count.")
         warehouses[wh_name] = {
             "size": size.upper(),
             "auto_suspend_minutes": auto_suspend,
@@ -272,7 +453,8 @@ def _section_warehouses() -> dict:
         while True:
             if not _confirm("Add another warehouse?", default=False):
                 break
-            wh_name = _prompt("  Warehouse name (without WH_ prefix)").upper()
+            raw_name = _prompt("  Warehouse name (without WH_ prefix)")
+            wh_name = _normalize_identifier("  Warehouse name (without WH_ prefix)", raw_name)
             size = _prompt("  Size", type=sizes, default="XSMALL")
             auto_suspend = _prompt("  Auto-suspend (minutes)", type=int, default=5)
             budget = _prompt("  Monthly credit budget", type=int, default=100)
@@ -287,10 +469,22 @@ def _section_warehouses() -> dict:
     return warehouses
 
 
-def _section_team() -> list[dict]:
+def _section_team(brownfield_context: dict | None = None) -> list[dict]:
     """Section 6: Team Structure — human functional role personas."""
     _section_header("Section 6 — Team Structure")
     _note("Each persona maps to a functional role. Service accounts belong in connectors.yaml.")
+
+    # Brownfield: suggest personas from existing role names
+    if brownfield_context:
+        human_assignments = brownfield_context.get("1_3_human_role_assignments", {}).get("human_role_assignments", [])
+        if human_assignments:
+            click.echo(click.style(
+                f"\n  Found {len(human_assignments)} human role assignment(s) in your environment:", fg="cyan"
+            ))
+            for a in human_assignments[:5]:
+                click.echo(f"    {a.get('user_name', '?')} -> {a.get('role_name', '?')}")
+            if len(human_assignments) > 5:
+                click.echo(f"    ... and {len(human_assignments) - 5} more")
 
     default_personas = ["DATA_ENGINEER", "DATA_ANALYST", "BI_DEVELOPER", "DATA_SCIENTIST"]
     click.echo("\n  Default personas: " + ", ".join(default_personas))
@@ -344,18 +538,23 @@ def _section_team() -> list[dict]:
                 schemas = ["*"]  # always wildcard for greenfield safety
                 scope_to = named_schemas
 
-            click.echo("    Privileges:")
-            privs: list[str] = []
-            if _confirm("      SELECT?", default=True):
-                privs.append("SELECT")
-            if _confirm("      INSERT?", default=False):
-                privs.append("INSERT")
-            if _confirm("      CREATE TABLE?", default=False):
-                privs.append("CREATE TABLE")
-            if _confirm("      CREATE SCHEMA?", default=False):
-                privs.append("CREATE SCHEMA")
+            # Privilege collection with confirmation loop
+            while True:
+                click.echo("    Privileges:")
+                privs: list[str] = []
+                if _confirm("      SELECT?", default=True):
+                    privs.append("SELECT")
+                if _confirm("      INSERT?", default=False):
+                    privs.append("INSERT")
+                if _confirm("      CREATE TABLE?", default=False):
+                    privs.append("CREATE TABLE")
+                if _confirm("      CREATE SCHEMA?", default=False):
+                    privs.append("CREATE SCHEMA")
+                privs_display = ", ".join(privs) if privs else "NONE"
+                if _confirm(f"      -> {db}: {privs_display} — correct?", default=True):
+                    break
 
-            entry_reason = _prompt("    Reason for this database access")
+            entry_reason = _prompt("    Reason (optional, press Enter to skip)", default="")
 
             entry: dict = {
                 "db": db,
@@ -382,22 +581,29 @@ def _section_team() -> list[dict]:
     return functional_roles
 
 
-def _section_tags() -> dict:
+def _section_tags(brownfield_context: dict | None = None) -> dict:
     """Section 7: Tagging taxonomy."""
     _section_header("Section 7 — Tagging")
     _note("Tags are defined now and enforced at Observability expansion.")
 
-    cost_center_values_input = _prompt(
-        "Cost center tag values (comma-separated, e.g. engineering,analytics,product)",
+    # Brownfield: show existing tags
+    if brownfield_context:
+        tag_refs = brownfield_context.get("1_6_tag_coverage", {}).get("tag_references", [])
+        if tag_refs:
+            click.echo(click.style(f"\n  Found {len(tag_refs)} tag reference(s) in your environment:", fg="cyan"))
+            for t in tag_refs[:5]:
+                click.echo(f"    {t.get('tag_name', '?')} on {t.get('object_name', '?')}")
+
+    cost_center_label = "Cost center tag values (comma-separated, e.g. engineering,analytics,product)"
+    cost_center_raw = _prompt(
+        cost_center_label,
         default="engineering,analytics,product,infrastructure",
     )
-    cost_center_values = [v.strip().lower() for v in cost_center_values_input.split(",")]
+    cost_center_values = _validate_tag_values(cost_center_label, cost_center_raw, min_count=2)
 
-    env_values_input = _prompt(
-        "Environment tag values (comma-separated)",
-        default="prod,staging,dev",
-    )
-    env_values = [v.strip().lower() for v in env_values_input.split(",")]
+    env_label = "Environment tag values (comma-separated)"
+    env_raw = _prompt(env_label, default="prod,staging,dev")
+    env_values = _validate_tag_values(env_label, env_raw, min_count=2)
 
     pii_required = _confirm("Include PII tag (for column-level classification)?", default=True)
     sensitivity_required = _confirm("Include sensitivity tag (public/internal/confidential/restricted)?", default=True)
@@ -407,6 +613,17 @@ def _section_tags() -> dict:
         {"name": "environment", "values": env_values, "apply_to": ["database", "schema", "warehouse"]},
         {"name": "owner", "values": [], "apply_to": ["database", "schema"]},
     ]
+
+    # Custom required tags
+    while _confirm("Add a custom required tag?", default=False):
+        tag_name = _prompt("  Tag name").lower().replace(" ", "_")
+        values_label = "  Allowed values (comma-separated)"
+        values_raw = _prompt(values_label)
+        values = _validate_tag_values(values_label, values_raw, min_count=1)
+        apply_input = _prompt("  Apply to (comma-separated, e.g. database,schema,warehouse,table,column)")
+        apply_to = [a.strip().lower() for a in apply_input.split(",") if a.strip()]
+        required_tags.append({"name": tag_name, "values": values, "apply_to": apply_to})
+        click.echo(click.style(f"  -> tag '{tag_name}' added", fg="green"))
 
     optional_tags = [{"name": "project", "apply_to": ["schema", "table"]}]
     if sensitivity_required:
@@ -425,10 +642,21 @@ def _section_tags() -> dict:
     return {"required_tags": required_tags, "optional_tags": optional_tags, "enforcement_stage": "core"}
 
 
-def _section_emergency_access() -> dict:
+def _section_emergency_access(brownfield_context: dict | None = None) -> dict:
     """Section 8: FIREFIGHTER emergency access."""
     _section_header("Section 8 — Emergency Access (FIREFIGHTER)")
     _note("FIREFIGHTER is a dormant role. It must have an explicit activation gate.")
+
+    # Brownfield: check if FIREFIGHTER role already exists
+    if brownfield_context:
+        roles = brownfield_context.get("1_1_role_inventory", {}).get("roles", [])
+        ff_role = next((r for r in roles if "FIREFIGHTER" in r.get("name", "").upper()), None)
+        if ff_role:
+            click.echo(click.style(
+                f"  Found existing FIREFIGHTER-type role: {ff_role['name']}", fg="cyan"
+            ))
+        else:
+            _note("No FIREFIGHTER role found in current environment — this will be created.")
 
     contacts = []
     click.echo("\n  Authorized FIREFIGHTER activators:")
@@ -470,14 +698,17 @@ def _write_connectors_yaml(connectors: list[dict], output_dir: Path):
     return path
 
 
-def _write_team_yaml(functional_roles: list[dict], output_dir: Path):
+def _write_team_yaml(functional_roles: list[dict], output_dir: Path, emergency: dict | None = None):
     path = output_dir / "team.yaml"
     content = "# intake/team.yaml\n"
     content += "# Generated by scripts/intake_interview.py\n"
     content += "# See: docs/SPEC.md §1.4 — Team structure and functional roles\n"
     content += "# scope_to: when named schemas were specified, schemas is set to [\"*\"] for greenfield\n"
     content += "#   safety; update schemas: to the scope_to list once those schemas exist.\n\n"
-    content += yaml.dump({"functional_roles": functional_roles}, default_flow_style=False, sort_keys=False)
+    doc: dict = {"functional_roles": functional_roles}
+    if emergency:
+        doc["emergency_access"] = emergency
+    content += yaml.dump(doc, default_flow_style=False, sort_keys=False)
     path.write_text(content)
     return path
 
@@ -498,8 +729,16 @@ def _write_decisions_md(
     emergency: dict,
     output_dir: Path,
     mode: str,
+    connectors: list[dict] | None = None,
+    team_roles: list[dict] | None = None,
+    tags: dict | None = None,
+    author: str = "",
 ):
     path = output_dir / "decisions.md"
+    connectors = connectors or []
+    team_roles = team_roles or []
+    tags = tags or {}
+
     lines = [
         "# Governance Decision Log",
         "*Flynn Data Services — Generated during intake*",
@@ -522,13 +761,46 @@ def _write_decisions_md(
         "",
         "## Decisions",
         "",
-        "| Decision | Options considered | Choice made | Reason | Reference |",
-        "|----------|-------------------|-------------|--------|-----------|",
-        "| Database structure | Per-source vs shared RAW | Per-source | Stronger isolation — each connector scoped to its own DB | PHILOSOPHY.md §Connector Role Philosophy |",
-        f"| Maturity target | Core / Observability / Enforcement | {context['maturity_target'].capitalize()} | Structure first, enforcement second | PHILOSOPHY.md §The Maturity Model |",
-        "| Warehouse topology | Single shared vs workload-separated | Workload-separated | Noisy neighbor rule | PHILOSOPHY.md §Warehouse Isolation Standard |",
-        "| Service account auth | Password vs key-pair | Key-pair (RSA) | Audit trail + rotation safety | PHILOSOPHY.md §Core Principles #8 |",
-        "| Connector role pattern | Functional roles only vs connector layer | Connector layer | LOADER is too broad | PHILOSOPHY.md §Connector Role Philosophy |",
+        "| Decision | Options considered | Choice made | Reason | Source | Reference |",
+        "|----------|-------------------|-------------|--------|--------|-----------|",
+        "| Database structure | Per-source vs shared RAW | Per-source | Stronger isolation — each connector scoped to its own DB | FDS standard | PHILOSOPHY.md §Connector Role Philosophy |",
+        f"| Maturity target | Core / Observability / Enforcement | {context['maturity_target'].capitalize()} | Structure first, enforcement second | Client decision | PHILOSOPHY.md §The Maturity Model |",
+        "| Service account auth | Password vs key-pair | Key-pair (RSA) | Audit trail + rotation safety | FDS standard | PHILOSOPHY.md §Core Principles #8 |",
+        "| Connector role pattern | Functional roles only vs connector layer | Connector layer | LOADER is too broad | FDS standard | PHILOSOPHY.md §Connector Role Philosophy |",
+    ]
+
+    # Dynamic warehouse topology row
+    wh_names = list(warehouse_config.keys())
+    default_3 = set(wh_names) == {"INGEST", "TRANSFORM", "ANALYTICS"}
+    wh_choice = "3 standard workload warehouses (default)" if default_3 else f"Custom: {', '.join(f'WH_{n}' for n in wh_names)}"
+    wh_source = "FDS standard" if default_3 else "Client decision"
+    lines.append(
+        f"| Warehouse topology | Single shared vs workload-separated | {wh_choice} | Noisy neighbor rule | {wh_source} | PHILOSOPHY.md §Warehouse Isolation Standard |"
+    )
+
+    # Dynamic connector row
+    if connectors:
+        types = ", ".join(sorted({c["type"] for c in connectors}))
+        lines.append(
+            f"| Connector count | N/A | {len(connectors)} connector(s) ({types}) | As defined in intake | Client decision | connectors.yaml |"
+        )
+
+    # Dynamic persona row
+    if team_roles:
+        names = ", ".join(r["name"] for r in team_roles)
+        lines.append(
+            f"| Functional personas | N/A | {len(team_roles)} persona(s): {names} | As defined in intake | Client decision | team.yaml |"
+        )
+
+    # Dynamic tag row
+    required = tags.get("required_tags", [])
+    if required:
+        tag_names = ", ".join(t["name"] for t in required)
+        lines.append(
+            f"| Required tags | N/A | {len(required)} tag(s): {tag_names} | Taxonomy defined during intake | Client decision | tags.yaml |"
+        )
+
+    lines += [
         "",
         "---",
         "",
@@ -559,7 +831,18 @@ def _write_decisions_md(
             f"| {cfg['monthly_credit_quota']} | {cfg['notify_at_percentage']}% | {cfg['suspend_at_percentage']}% |"
         )
 
-    lines += ["", "---", "", "## Change Log", "", "| Date | Change | Author |", "|------|--------|--------|", "| | Initial intake | |"]
+    today = datetime.date.today().isoformat()
+    author_display = author if author else ""
+    lines += [
+        "",
+        "---",
+        "",
+        "## Change Log",
+        "",
+        "| Date | Change | Author |",
+        "|------|--------|--------|",
+        f"| {today} | Initial intake | {author_display} |",
+    ]
     path.write_text("\n".join(lines) + "\n")
     return path
 
@@ -600,7 +883,8 @@ def _validate_connectors(connectors: list[dict]) -> list[str]:
 @click.option("--greenfield", "mode", flag_value="greenfield", default=True, help="Full greenfield interview")
 @click.option("--brownfield", "mode", flag_value="brownfield", help="Brownfield — pre-populate from audit output")
 @click.option("--output-dir", default="intake", show_default=True, help="Output directory for generated files")
-def cli(mode: str, output_dir: str):
+@click.option("--dry-run", is_flag=True, help="Print generated YAML to stdout; skip file writes")
+def cli(mode: str, output_dir: str, dry_run: bool):
     """Interactive intake interview — generates connectors.yaml, team.yaml, tags.yaml, decisions.md."""
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -628,16 +912,62 @@ def cli(mode: str, output_dir: str):
                     pass
             click.echo(f"Loaded {len(brownfield_context)} audit sections from {survey_dir}")
 
+    # State file — offer resume if a prior session was interrupted
+    existing_state = _load_state(out_dir)
+    data: dict = {}
+    completed_sections: set[str] = set()
+
+    if existing_state and existing_state.get("mode") == mode:
+        prior = existing_state.get("completed_sections", [])
+        if prior:
+            click.echo(click.style(
+                f"\nFound an interrupted session (completed: {', '.join(prior)}).", fg="yellow"
+            ))
+            choice = _prompt(
+                "Resume, restart, or abort?",
+                type=click.Choice(["resume", "restart", "abort"], case_sensitive=False),
+                default="resume",
+            )
+            if choice == "abort":
+                click.echo("Aborted.")
+                sys.exit(0)
+            elif choice == "resume":
+                data = existing_state.get("data", {})
+                completed_sections = set(prior)
+                click.echo(click.style("Resuming from last completed section.", fg="cyan"))
+            else:
+                _delete_state(out_dir)
+
+    def _run_section(section_id: str, fn, *args) -> Any:
+        """Run a section or load from state if already completed."""
+        if section_id in completed_sections:
+            click.echo(click.style(f"  [resumed] Skipping {section_id} (already completed)", fg="cyan"))
+            return data[section_id]
+        result = fn(*args)
+        data[section_id] = result
+        completed_sections.add(section_id)
+        _save_state({
+            "version": 1,
+            "mode": mode,
+            "completed_sections": list(completed_sections),
+            "data": data,
+            "timestamp": datetime.datetime.now().isoformat(),
+        }, out_dir)
+        return result
+
     # Run interview sections
-    context = _section_context(brownfield_context)
-    ingestion_connectors = _section_ingestion(brownfield_context)
-    transformation_connectors = _section_transformation(brownfield_context)
-    consumption_connectors = _section_consumption(brownfield_context)
+    context = _run_section("context", _section_context, brownfield_context)
+    ingestion_connectors = _run_section("ingestion", _section_ingestion, brownfield_context)
+    transformation_connectors = _run_section("transformation", _section_transformation, brownfield_context)
+    consumption_connectors = _run_section("consumption", _section_consumption, brownfield_context)
     all_connectors = ingestion_connectors + transformation_connectors + consumption_connectors
-    warehouse_config = _section_warehouses()
-    team_roles = _section_team()
-    tags = _section_tags()
-    emergency = _section_emergency_access()
+    warehouse_config = _run_section("warehouses", _section_warehouses, brownfield_context)
+    team_roles = _run_section("team", _section_team, brownfield_context)
+    tags = _run_section("tags", _section_tags, brownfield_context)
+    emergency = _run_section("emergency", _section_emergency_access, brownfield_context)
+
+    # Author for decision log
+    author_name = _prompt("Your name (for the decision log)", default="")
 
     # Validate
     _section_header("Validation")
@@ -652,11 +982,37 @@ def cli(mode: str, output_dir: str):
     else:
         click.echo(click.style("  All connectors valid.", fg="green"))
 
-    # Preview
+    # Preview — connectors
     _section_header("Preview — connectors.yaml")
     click.echo(f"  {len(all_connectors)} connector(s):")
     for c in all_connectors:
         click.echo(f"    CONN_{c['name']} ({c['type']}) -> {c.get('target_db', c.get('source_db', '?'))} on WH_{c['warehouse']}")
+
+    # Preview — team
+    _section_header("Preview — team.yaml")
+    click.echo(f"  {len(team_roles)} persona(s):")
+    for r in team_roles:
+        click.echo(f"    {r['name']} -> WH_{r['warehouse']}, {len(r['database_access'])} DB(s)")
+
+    # Preview — tags
+    _section_header("Preview — tags.yaml")
+    click.echo(f"  {len(tags.get('required_tags', []))} required tag(s):")
+    for t in tags.get("required_tags", []):
+        click.echo(f"    {t['name']}: {len(t.get('values', []))} values, applies to {', '.join(t.get('apply_to', []))}")
+
+    # Dry-run: print to stdout and exit
+    if dry_run:
+        click.echo(click.style("\n--- DRY RUN: connectors.yaml ---", bold=True))
+        click.echo(yaml.dump({"connectors": all_connectors}, default_flow_style=False, sort_keys=False))
+        click.echo(click.style("--- DRY RUN: team.yaml ---", bold=True))
+        team_doc: dict = {"functional_roles": team_roles}
+        if emergency:
+            team_doc["emergency_access"] = emergency
+        click.echo(yaml.dump(team_doc, default_flow_style=False, sort_keys=False))
+        click.echo(click.style("--- DRY RUN: tags.yaml ---", bold=True))
+        click.echo(yaml.dump(tags, default_flow_style=False, sort_keys=False))
+        click.echo(click.style("--- END DRY RUN ---", bold=True))
+        sys.exit(0)
 
     if not _confirm("\nWrite output files?", default=True):
         click.echo("Aborted — no files written.")
@@ -664,9 +1020,15 @@ def cli(mode: str, output_dir: str):
 
     # Write outputs
     c_path = _write_connectors_yaml(all_connectors, out_dir)
-    tm_path = _write_team_yaml(team_roles, out_dir)
+    tm_path = _write_team_yaml(team_roles, out_dir, emergency)
     t_path = _write_tags_yaml(tags, out_dir)
-    d_path = _write_decisions_md(context, warehouse_config, emergency, out_dir, mode)
+    d_path = _write_decisions_md(
+        context, warehouse_config, emergency, out_dir, mode,
+        connectors=all_connectors, team_roles=team_roles, tags=tags, author=author_name,
+    )
+
+    # Clean up state file on success
+    _delete_state(out_dir)
 
     click.echo("")
     click.echo(click.style("Files written:", bold=True))
