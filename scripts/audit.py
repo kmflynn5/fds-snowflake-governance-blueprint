@@ -257,29 +257,34 @@ def keygen():
     """Generate RSA keypair for the audit user.
 
     Outputs the public key to stdout for pasting into audit_setup.sql.
-    Saves the private key to audit_key.p8 in the current directory.
+    Saves the private key to audit_key.pem in the ~/.snowflake directory.
     """
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives.serialization import (
         Encoding,
         NoEncryption,
-        PublicFormat,
         PrivateFormat,
+        PublicFormat,
     )
 
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-    # Save private key
-    priv_path = Path("audit_key.p8")
+    # Save private key to ~/.snowflake/ alongside snow CLI config so the path
+    # is stable regardless of working directory.
+    snowflake_dir = Path.home() / ".snowflake"
+    snowflake_dir.mkdir(exist_ok=True)
+    priv_path = snowflake_dir / "audit_key.pem"
     priv_path.write_bytes(
         private_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
     )
-    click.echo(f"Private key saved to: {priv_path.resolve()}", err=True)
+    click.echo(f"Private key saved to: {priv_path}", err=True)
     click.echo("(Never commit this file — it's in .gitignore)", err=True)
     click.echo("", err=True)
 
     # Print public key for audit_setup.sql
-    pub_pem = private_key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    pub_pem = private_key.public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    )
     # Snowflake expects the key body without PEM headers
     pub_lines = pub_pem.decode().strip().splitlines()
     pub_body = "".join(pub_lines[1:-1])  # strip -----BEGIN/END----- lines
