@@ -67,10 +67,17 @@ SURVEYS = {
         "description": "Direct object grants to users — should be zero in a governed environment",
         "queries": {
             "direct_grants": textwrap.dedent("""
-                SELECT *
-                FROM snowflake.account_usage.grants_to_users
-                WHERE granted_on != 'ROLE'
-                  AND deleted_on IS NULL
+                SELECT g.grantee_name AS user_name, g.role AS granted_role, g.granted_by, g.created_on
+                FROM snowflake.account_usage.grants_to_users g
+                JOIN snowflake.account_usage.users u
+                  ON u.name = g.grantee_name AND u.deleted_on IS NULL
+                WHERE g.deleted_on IS NULL
+                  AND u.type NOT IN ('SERVICE', 'LEGACY_SERVICE')
+                  AND g.role NOT IN (
+                    'ACCOUNTADMIN', 'SYSADMIN', 'SECURITYADMIN', 'USERADMIN',
+                    'PUBLIC', 'ORGADMIN'
+                  )
+                ORDER BY g.grantee_name, g.role
             """).strip(),
         },
     },
@@ -96,12 +103,9 @@ SURVEYS = {
             "warehouse_usage_30d": textwrap.dedent("""
                 SELECT
                   warehouse_name,
-                  COUNT(*) AS query_count,
-                  SUM(credits_used) AS total_credits,
-                  AVG(execution_time)/1000 AS avg_execution_seconds
-                FROM snowflake.account_usage.query_history
+                  SUM(credits_used) AS total_credits
+                FROM snowflake.account_usage.warehouse_metering_history
                 WHERE start_time >= DATEADD('day', -30, CURRENT_TIMESTAMP)
-                  AND warehouse_name IS NOT NULL
                 GROUP BY warehouse_name
                 ORDER BY total_credits DESC
             """).strip(),
@@ -110,14 +114,8 @@ SURVEYS = {
     "1_5_resource_monitor_coverage": {
         "description": "Resource monitor coverage — warehouses without monitors",
         "queries": {
-            "unmonitored_warehouses": textwrap.dedent("""
-                SELECT w.name AS warehouse_name
-                FROM snowflake.account_usage.warehouses w
-                LEFT JOIN snowflake.account_usage.resource_monitors rm
-                  ON w.resource_monitor = rm.name
-                WHERE w.deleted_on IS NULL
-                  AND rm.name IS NULL
-            """).strip(),
+            "warehouses": "SHOW WAREHOUSES",
+            "resource_monitors": "SHOW RESOURCE MONITORS",
         },
     },
     "1_6_tag_coverage": {
@@ -134,8 +132,9 @@ SURVEYS = {
                   table_catalog AS database_name,
                   table_schema AS schema_name,
                   COUNT(*) AS table_count
-                FROM information_schema.tables
-                WHERE table_schema NOT IN ('INFORMATION_SCHEMA')
+                FROM snowflake.account_usage.tables
+                WHERE deleted IS NULL
+                  AND table_schema NOT IN ('INFORMATION_SCHEMA')
                 GROUP BY 1, 2
                 ORDER BY 1, 2
             """).strip(),
@@ -453,8 +452,15 @@ def report(survey_dir: str):
     stats["warehouse_count"] = len(warehouses) if isinstance(warehouses, list) else 0
 
     # 1.5 Resource monitor coverage
-    unmonitored = data.get("1_5_resource_monitor_coverage", {}).get("unmonitored_warehouses", [])
-    unmonitored_names = [r.get("warehouse_name", "") for r in unmonitored] if isinstance(unmonitored, list) else []
+    # SHOW WAREHOUSES returns a 'resource_monitor' column; null/empty means unmonitored.
+    wh_list = data.get("1_5_resource_monitor_coverage", {}).get("warehouses", [])
+    if not wh_list:
+        # fall back to 1_4 warehouse data if 1_5 is unavailable
+        wh_list = warehouses
+    unmonitored_names = [
+        w.get("name", "") for w in (wh_list if isinstance(wh_list, list) else [])
+        if not w.get("resource_monitor") or w.get("resource_monitor") in ("null", "", None)
+    ]
     stats["unmonitored_warehouse_count"] = len(unmonitored_names)
     if unmonitored_names:
         critical.append({
