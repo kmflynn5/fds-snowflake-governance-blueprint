@@ -21,6 +21,25 @@ from pathlib import Path
 
 import click
 
+# ---------------------------------------------------------------------------
+# Sensitive role patterns — any user assignment to these roles is a critical
+# finding. Covers our FIREFIGHTER role and common client break-glass names.
+# ---------------------------------------------------------------------------
+
+SENSITIVE_ROLE_PATTERNS = (
+    "FIREFIGHTER",
+    "BREAK_GLASS",
+    "BREAKGLASS",
+    "EMERGENCY",
+    "FIXIT",
+    "FIX_IT",
+    "SYSADMIN_TEMP",
+    "TEMP_ADMIN",
+    "OVERRIDE",
+    "INCIDENT",
+    "HOTFIX",
+    "HOT_FIX",
+)
 
 # ---------------------------------------------------------------------------
 # Survey queries — mirrors brownfield_intake.md Part 1, sections 1.1–1.8
@@ -43,6 +62,12 @@ SURVEYS = {
                 FROM snowflake.account_usage.grants_to_roles
                 WHERE deleted_on IS NULL
                 ORDER BY grantee_name, granted_on, name
+            """).strip(),
+            "user_role_grants": textwrap.dedent("""
+                SELECT grantee_name AS user_name, role AS granted_role, granted_by
+                FROM snowflake.account_usage.grants_to_users
+                WHERE deleted_on IS NULL
+                ORDER BY grantee_name, role
             """).strip(),
         },
     },
@@ -394,9 +419,12 @@ def report(survey_dir: str):
             r.get("name", "") for r in roles
             if not any(
                 r.get("name", "").startswith(p)
-                for p in ("CONN_", "OBJ_", "WH_", "ACCOUNTADMIN", "SYSADMIN",
-                           "SECURITYADMIN", "USERADMIN", "PUBLIC", "FIREFIGHTER",
-                           "AUDITOR", "LOADER", "TRANSFORMER", "ANALYST")
+                for p in (
+                    "CONN_", "OBJ_", "WH_", "TF_", "FDS_",
+                    "ACCOUNTADMIN", "SYSADMIN", "SECURITYADMIN", "USERADMIN", "ORGADMIN",
+                    "PUBLIC", "FIREFIGHTER", "BREAK_GLASS",
+                    "AUDITOR", "LOADER", "TRANSFORMER", "ANALYST",
+                )
             )
         ]
         if ad_hoc_roles:
@@ -406,6 +434,59 @@ def report(survey_dir: str):
                 "priority": "medium",
                 "remediation": "Map each role to a connector or functional role pattern and migrate",
             })
+
+    # 1.1 Break-glass / dormant role assignments (FIREFIGHTER and client variants)
+    # Primary source: grants_to_roles (has USER rows for role-to-user grants, ~2h latency).
+    # Fallback source: user_role_grants from grants_to_users (lower latency).
+    grants_to_roles = data.get("1_1_role_inventory", {}).get("grants_to_roles", [])
+    user_role_grants = data.get("1_1_role_inventory", {}).get("user_role_grants", [])
+
+    sensitive_assignments: list[dict] = []
+    if isinstance(grants_to_roles, list):
+        sensitive_assignments += [
+            {"role": r.get("privilege_or_role", ""), "user": r.get("grantee_name", "")}
+            for r in grants_to_roles
+            if r.get("granted_to") == "USER"
+            and any(pat in r.get("privilege_or_role", "").upper() for pat in SENSITIVE_ROLE_PATTERNS)
+        ]
+    if isinstance(user_role_grants, list):
+        seen = {(s["role"], s["user"]) for s in sensitive_assignments}
+        sensitive_assignments += [
+            {"role": r.get("granted_role", ""), "user": r.get("user_name", "")}
+            for r in user_role_grants
+            if any(pat in r.get("granted_role", "").upper() for pat in SENSITIVE_ROLE_PATTERNS)
+            and (r.get("granted_role", ""), r.get("user_name", "")) not in seen
+        ]
+
+    if sensitive_assignments:
+        by_role: dict[str, list[str]] = {}
+        for s in sensitive_assignments:
+            by_role.setdefault(s["role"], []).append(s["user"])
+        evidence_parts = [f"{role}→{', '.join(users)}" for role, users in by_role.items()]
+        critical.append({
+            "finding": "Break-glass / dormant role(s) assigned to users",
+            "evidence": "; ".join(evidence_parts),
+            "risk": "Emergency roles must have zero user assignments outside active incidents (PHILOSOPHY.md §4)",
+            "remediation": "Revoke all assignments immediately. Document any active incident. Add daily assertion to eval suite.",
+        })
+
+    # 1.1 SYSADMIN granted directly to users (should only be held via TF_SYSADMIN)
+    sysadmin_from_gtr = [
+        r.get("grantee_name", "") for r in (grants_to_roles if isinstance(grants_to_roles, list) else [])
+        if r.get("privilege_or_role") == "SYSADMIN" and r.get("granted_to") == "USER"
+    ]
+    sysadmin_from_urg = [
+        r.get("user_name", "") for r in (user_role_grants if isinstance(user_role_grants, list) else [])
+        if r.get("granted_role") == "SYSADMIN"
+    ]
+    sysadmin_users = list(dict.fromkeys(sysadmin_from_gtr + sysadmin_from_urg))  # dedup, preserve order
+    if sysadmin_users:
+        critical.append({
+            "finding": "SYSADMIN granted directly to users",
+            "evidence": f"{len(sysadmin_users)} user(s): {', '.join(sysadmin_users)}",
+            "risk": "SYSADMIN should only be granted to service roles (TF_SYSADMIN), not humans (PHILOSOPHY.md §4)",
+            "remediation": "Remove SYSADMIN from all human users; use scoped functional roles instead",
+        })
 
     # 1.2 User inventory — ACCOUNTADMIN users
     acct_admin_users = data.get("1_2_user_inventory", {}).get("accountadmin_users", [])
