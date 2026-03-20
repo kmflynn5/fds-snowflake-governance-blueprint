@@ -6,8 +6,17 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-import pytest
-from scripts.generate_tf import derive_databases, derive_warehouses, derive_rbac, derive_functional_roles
+import json
+
+from scripts.generate_tf import (
+    derive_databases,
+    derive_warehouses,
+    derive_rbac,
+    derive_functional_roles,
+    derive_firefighter_config,
+    load_emergency_config,
+    write_tfvars,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -329,3 +338,99 @@ class TestDeriveFunctionalRoles:
         assert "INSERT" in privileges
         # Two separate entries (one per privilege)
         assert len(engineer_grants) == 2
+
+
+# ---------------------------------------------------------------------------
+# derive_firefighter_config tests
+# ---------------------------------------------------------------------------
+
+EXAMPLE_EMERGENCY = {
+    "authorized_contacts": [
+        {"name": "Alice", "title": "Lead DE", "contact": "@alice"},
+        {"name": "Bob", "title": "Platform Eng", "contact": "@bob"},
+    ],
+    "notification_process": "#incidents",
+    "deactivation_sla": "within_24h",
+}
+
+
+class TestDeriveFirefighterConfig:
+    def test_contacts_preserved(self):
+        result = derive_firefighter_config(EXAMPLE_EMERGENCY)
+        assert result["authorized_contacts"] == EXAMPLE_EMERGENCY["authorized_contacts"]
+
+    def test_notification_process_preserved(self):
+        result = derive_firefighter_config(EXAMPLE_EMERGENCY)
+        assert result["notification_process"] == "#incidents"
+
+    def test_sla_preserved(self):
+        result = derive_firefighter_config(EXAMPLE_EMERGENCY)
+        assert result["deactivation_sla"] == "within_24h"
+
+    def test_empty_dict_returns_safe_defaults(self):
+        result = derive_firefighter_config({})
+        assert result["authorized_contacts"] == []
+        assert result["notification_process"] == ""
+        assert result["deactivation_sla"] == "within_24h"
+
+    def test_output_keys(self):
+        result = derive_firefighter_config(EXAMPLE_EMERGENCY)
+        assert set(result.keys()) == {"authorized_contacts", "notification_process", "deactivation_sla"}
+
+
+# ---------------------------------------------------------------------------
+# load_emergency_config tests
+# ---------------------------------------------------------------------------
+
+class TestLoadEmergencyConfig:
+    def test_returns_none_when_file_missing(self, tmp_path):
+        result = load_emergency_config(str(tmp_path / "team.yaml"))
+        assert result is None
+
+    def test_returns_none_when_key_absent(self, tmp_path):
+        team_file = tmp_path / "team.yaml"
+        team_file.write_text("functional_roles: []\n")
+        result = load_emergency_config(str(team_file))
+        assert result is None
+
+    def test_returns_emergency_config(self, tmp_path):
+        import yaml
+        team_file = tmp_path / "team.yaml"
+        team_file.write_text(yaml.dump({
+            "functional_roles": [],
+            "emergency_access": EXAMPLE_EMERGENCY,
+        }))
+        result = load_emergency_config(str(team_file))
+        assert result is not None
+        assert result["notification_process"] == "#incidents"
+        assert len(result["authorized_contacts"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# write_tfvars — firefighter_config inclusion tests
+# ---------------------------------------------------------------------------
+
+class TestWriteTfvarsFirefighter:
+    def _minimal_inputs(self):
+        return {}, {}, {
+            "connector_roles": {},
+            "object_roles": {},
+            "connector_to_object_role_grants": [],
+            "connector_to_warehouse_grants": [],
+            "connector_type_mapping": {},
+        }, {"functional_roles": [], "functional_role_grants": []}
+
+    def test_firefighter_config_written_to_rbac(self, tmp_path):
+        databases, warehouses, rbac, functional = self._minimal_inputs()
+        ff = derive_firefighter_config(EXAMPLE_EMERGENCY)
+        _, _, rbac_file = write_tfvars(str(tmp_path), databases, warehouses, rbac, functional, ff)
+        payload = json.loads(rbac_file.read_text())
+        assert "firefighter_config" in payload
+        assert payload["firefighter_config"]["notification_process"] == "#incidents"
+        assert len(payload["firefighter_config"]["authorized_contacts"]) == 2
+
+    def test_firefighter_config_absent_when_none(self, tmp_path):
+        databases, warehouses, rbac, functional = self._minimal_inputs()
+        _, _, rbac_file = write_tfvars(str(tmp_path), databases, warehouses, rbac, functional, None)
+        payload = json.loads(rbac_file.read_text())
+        assert "firefighter_config" not in payload

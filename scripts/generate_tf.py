@@ -20,7 +20,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import click
@@ -37,6 +36,14 @@ def load_team_config(team_path: str) -> list[dict]:
     if not path.exists():
         return []
     return yaml.safe_load(path.read_text()).get("functional_roles", [])
+
+
+def load_emergency_config(team_path: str) -> dict | None:
+    """Load emergency_access from team.yaml. Returns None if absent or file missing."""
+    path = Path(team_path)
+    if not path.exists():
+        return None
+    return yaml.safe_load(path.read_text()).get("emergency_access")
 
 
 def load_config(connectors_path: str, tags_path: str) -> tuple[list[dict], dict]:
@@ -124,7 +131,7 @@ def derive_warehouses(connectors: list[dict]) -> dict:
             "monthly_credit_quota": c.get("warehouse_monthly_credit_quota", 100),
             "notify_at_percentage": c.get("warehouse_notify_at_percentage", 75),
             "suspend_at_percentage": c.get("warehouse_suspend_at_percentage", 100),
-            "comment": f"Managed by terraform — derives from connectors.yaml",
+            "comment": "Managed by terraform — derives from connectors.yaml",
         }
 
     return warehouses
@@ -320,7 +327,21 @@ def derive_functional_roles(functional_roles: list[dict]) -> dict:
     }
 
 
-def write_tfvars(output_dir: str, databases: dict, warehouses: dict, rbac: dict, functional: dict):
+def derive_firefighter_config(emergency: dict) -> dict:
+    """Derive Terraform-ready FIREFIGHTER operational config from emergency_access.
+
+    Returns a structured dict with authorized contacts, notification process,
+    and deactivation SLA. Emitted to rbac.auto.tfvars.json so Terraform outputs
+    can surface it for runbooks and the eval suite.
+    """
+    return {
+        "authorized_contacts": emergency.get("authorized_contacts", []),
+        "notification_process": emergency.get("notification_process", ""),
+        "deactivation_sla": emergency.get("deactivation_sla", "within_24h"),
+    }
+
+
+def write_tfvars(output_dir: str, databases: dict, warehouses: dict, rbac: dict, functional: dict, firefighter: dict | None = None):
     """Write .auto.tfvars.json files to output_dir."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -332,6 +353,8 @@ def write_tfvars(output_dir: str, databases: dict, warehouses: dict, rbac: dict,
     db_file.write_text(json.dumps({"databases": databases}, indent=2) + "\n")
     wh_file.write_text(json.dumps({"warehouses": warehouses}, indent=2) + "\n")
     rbac_payload = {**rbac, **functional}
+    if firefighter is not None:
+        rbac_payload["firefighter_config"] = firefighter
     rbac_file.write_text(json.dumps(rbac_payload, indent=2) + "\n")
 
     return db_file, wh_file, rbac_file
@@ -381,13 +404,17 @@ def main(connectors: str, tags: str, team: str, output_dir: str, dry_run: bool):
     team_roles = load_team_config(team)
     if team_roles:
         click.echo(f"  {len(team_roles)} functional role(s) loaded from {team}")
+    emergency = load_emergency_config(team)
+    firefighter = derive_firefighter_config(emergency) if emergency else None
+    if firefighter:
+        click.echo(f"  {len(firefighter['authorized_contacts'])} FIREFIGHTER contact(s) loaded from {team}")
 
     databases = derive_databases(connector_list)
     warehouses = derive_warehouses(connector_list)
     rbac = derive_rbac(connector_list)
     functional = derive_functional_roles(team_roles)
 
-    click.echo(f"\nDerived:")
+    click.echo("\nDerived:")
     click.echo(f"  {len(databases)} database(s): {', '.join(databases.keys())}")
     click.echo(f"  {len(warehouses)} warehouse(s): {', '.join(f'WH_{w}' for w in warehouses.keys())}")
     click.echo(f"  {len(rbac['connector_roles'])} connector role(s)")
@@ -400,12 +427,15 @@ def main(connectors: str, tags: str, team: str, output_dir: str, dry_run: bool):
         click.echo("\n--- DRY RUN --- warehouses ---")
         click.echo(json.dumps({"warehouses": warehouses}, indent=2))
         click.echo("\n--- DRY RUN --- rbac ---")
-        click.echo(json.dumps({**rbac, **functional}, indent=2))
+        rbac_payload = {**rbac, **functional}
+        if firefighter:
+            rbac_payload["firefighter_config"] = firefighter
+        click.echo(json.dumps(rbac_payload, indent=2))
         return
 
-    db_file, wh_file, rbac_file = write_tfvars(output_dir, databases, warehouses, rbac, functional)
+    db_file, wh_file, rbac_file = write_tfvars(output_dir, databases, warehouses, rbac, functional, firefighter)
 
-    click.echo(f"\nWritten:")
+    click.echo("\nWritten:")
     click.echo(f"  {db_file}")
     click.echo(f"  {wh_file}")
     click.echo(f"  {rbac_file}")

@@ -77,18 +77,19 @@ class TestRunQuery:
 class TestKeygen:
     def test_keygen_output(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
         runner = CliRunner()
         result = runner.invoke(cli, ["keygen"])
         assert result.exit_code == 0, result.output
         assert "Paste this into audit_setup.sql" in result.output
-        assert (tmp_path / "audit_key.p8").exists()
+        assert (tmp_path / ".snowflake" / "audit_key.pem").exists()
 
     def test_public_key_no_headers(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
         runner = CliRunner()
         result = runner.invoke(cli, ["keygen"])
         # Public key body should not contain PEM headers
-        lines = [l for l in result.output.splitlines() if "-----" in l]
         # Only the err output has PEM header context, stdout body should be clean
         assert "-----BEGIN" not in result.output.split("Paste this")[1]
 
@@ -135,7 +136,7 @@ class TestReport:
         }))
         # Critical finding: unmonitored warehouses
         (survey_dir / "1_5_resource_monitor_coverage.json").write_text(json.dumps({
-            "unmonitored_warehouses": [{"warehouse_name": "COMPUTE_WH"}],
+            "warehouses": [{"name": "COMPUTE_WH", "resource_monitor": "null"}],
         }))
         # No tags
         (survey_dir / "1_6_tag_coverage.json").write_text(json.dumps({

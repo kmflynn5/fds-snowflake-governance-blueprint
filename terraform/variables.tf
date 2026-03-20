@@ -120,3 +120,17 @@ variable "functional_role_grants" {
   }))
   default = []
 }
+
+variable "firefighter_config" {
+  description = "FIREFIGHTER emergency access config — authorized contacts, notification process, deactivation SLA. Generated from team.yaml emergency_access by generate_tf.py."
+  type = object({
+    authorized_contacts = list(object({
+      name    = string
+      title   = string
+      contact = string
+    }))
+    notification_process = string
+    deactivation_sla     = string
+  })
+  default = null
+}
