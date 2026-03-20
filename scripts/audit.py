@@ -488,16 +488,35 @@ def report(survey_dir: str):
             "remediation": "Remove SYSADMIN from all human users; use scoped functional roles instead",
         })
 
-    # 1.2 User inventory — ACCOUNTADMIN users
+    # 1.2 User inventory — ACCOUNTADMIN users (cross-referenced with 1.7 activity)
     acct_admin_users = data.get("1_2_user_inventory", {}).get("accountadmin_users", [])
     if isinstance(acct_admin_users, list) and acct_admin_users:
-        names = [r.get("user_name", "") for r in acct_admin_users]
-        critical.append({
-            "finding": "Human users with ACCOUNTADMIN assigned",
-            "evidence": f"{len(names)} user(s): {', '.join(names)}",
-            "risk": "ACCOUNTADMIN should have zero active assignments in production (PHILOSOPHY.md §4)",
-            "remediation": "Remove ACCOUNTADMIN from all users; assign FIREFIGHTER for emergency access only",
-        })
+        aa_names = {r.get("user_name", "") for r in acct_admin_users}
+
+        # Cross-reference with 1.7 operational query activity
+        aa_queries = data.get("1_7_accountadmin_activity", {}).get("accountadmin_queries", [])
+        operational_aa_users = {
+            q.get("user_name", "") for q in (aa_queries if isinstance(aa_queries, list) else [])
+            if q.get("query_type", "") in ("SELECT", "INSERT", "UPDATE")
+        }
+
+        active = sorted(aa_names & operational_aa_users)   # assigned + actively used
+        dormant = sorted(aa_names - operational_aa_users)  # assigned but no routine use
+
+        if active:
+            critical.append({
+                "finding": "ACCOUNTADMIN assigned to users AND used for routine queries",
+                "evidence": f"{len(active)} user(s) actively running SELECT/INSERT/UPDATE as ACCOUNTADMIN: {', '.join(active)}",
+                "risk": "ACCOUNTADMIN is being used as a daily-driver role, not reserved for emergencies (PHILOSOPHY.md §4)",
+                "remediation": "Identify required privileges; create scoped roles; revoke ACCOUNTADMIN",
+            })
+        if dormant:
+            standard.append({
+                "finding": "ACCOUNTADMIN assigned but not used for routine queries",
+                "evidence": f"{len(dormant)} user(s) hold ACCOUNTADMIN with no operational query activity: {', '.join(dormant)}",
+                "priority": "medium",
+                "remediation": "Revoke ACCOUNTADMIN; grant FIREFIGHTER for break-glass access instead (PHILOSOPHY.md §4)",
+            })
 
     users = data.get("1_2_user_inventory", {}).get("users", [])
     stats["user_count"] = len(users) if isinstance(users, list) else 0
